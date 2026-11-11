@@ -437,7 +437,7 @@ soundBtn.addEventListener('click', () => {
   setMuted(!isMuted());
   store(MUTE_KEY, isMuted());
   showMute();
-  syncMusic();
+  wake();
   sfx('toolOn');
 });
 
@@ -463,14 +463,16 @@ function setVolume(kind, v) {
   vol[kind] = v;
   store(VOLUME_KEY, vol);
   if (kind === 'sfx') setSfxVolume(v);
-  else { setMusicVolume(v); syncMusic(); }
+  else setMusicVolume(v);
+  wake();
 }
 
-// Browsers only allow audio to start inside a user gesture.
-document.addEventListener('pointerdown', () => {
-  if (!unlock()) return;
-  if (!audioReady) { audioReady = true; syncMusic(); }
-}, { capture: true, passive: true });
+// Browsers only start audio after a user gesture, and unlock() creates nothing while sound is muted or off.
+function wake() {
+  if (unlock()) audioReady = true;
+  syncMusic();
+}
+document.addEventListener('pointerdown', wake, { capture: true, passive: true });
 document.addEventListener('visibilitychange', syncMusic);
 
 document.addEventListener('contextmenu', (e) => e.preventDefault());

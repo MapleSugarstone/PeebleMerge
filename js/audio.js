@@ -38,14 +38,40 @@ function open(context) {
   silent.start(0);
 }
 
-/** Creates or resumes the audio context. Call it from a touch or click handler. */
+/** True while something should be audible. */
+function wantRunning() {
+  return !muted && (sfxVol > 0 || musicVol > 0) && !document.hidden;
+}
+
+// Phones give a page the "playback" audio session by default, which pauses the player's own music and videos.
+// The "ambient" session mixes with them and follows the ringer switch. Browsers without the API keep their default.
+function takeAmbientSession() {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'ambient';
+  } catch { /* the browser keeps its default session */ }
+}
+
+// A running context holds the device's audio session even at zero gain, so it is suspended whenever nothing should play.
+function applySession() {
+  if (!ac || ac.state === 'closed') return;
+  if (wantRunning()) {
+    if (ac.state !== 'running') ac.resume().catch(() => {});
+  } else if (ac.state !== 'suspended') {
+    ac.suspend().catch(() => {});
+  }
+}
+
+/** Creates or resumes the audio context while sound is wanted. Call it from a touch or click handler. */
 export function unlock() {
   if (!ac) {
+    if (!wantRunning()) return null;
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return null;
+    takeAmbientSession();
     try { open(new Ctx()); } catch { return null; }
+    document.addEventListener('visibilitychange', applySession);
   }
-  if (ac.state === 'suspended') ac.resume();
+  applySession();
   return ac;
 }
 
@@ -69,18 +95,21 @@ function applyGains(now = false) {
 export function setMuted(m) {
   muted = m;
   applyGains();
+  applySession();
 }
 
 /** Sets the effects volume from 0 to 1. */
 export function setSfxVolume(v) {
   sfxVol = Math.max(0, Math.min(1, v));
   applyGains();
+  applySession();
 }
 
 /** Sets the music volume from 0 to 1. */
 export function setMusicVolume(v) {
   musicVol = Math.max(0, Math.min(1, v));
   applyGains();
+  applySession();
 }
 
 /** The audio context and the node music connects to, or null without audio. */
