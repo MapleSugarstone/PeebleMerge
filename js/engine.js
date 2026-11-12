@@ -9,15 +9,16 @@ export const CONFIG = {
   undoDepth: 3,
   pointsBase: 100,
   seedLevels: [1, 2, 3, 4, 5],
-  startItems: { hammer: 3, rewind: 3, blueprint: 3, seed: 1 },
+  startItems: { hammer: 3, rewind: 3, blueprint: 3, swap: 1, seed: 1 },
   // A merge gives XP equal to the new block's level. Level n needs min(base + step * (n - 1), max) XP.
-  xp: { base: 60, step: 25, max: 400 },
+  xp: { base: 50, step: 22, max: 360 },
   rarities: ['common', 'uncommon', 'rare', 'epic'],
   // Each level-up drops one item. Items at their cap are left out of the roll.
   drops: [
-    { item: 'rewind', rarity: 0, weight: 50, cap: 6 },
-    { item: 'hammer', rarity: 1, weight: 28, cap: 5 },
-    { item: 'blueprint', rarity: 2, weight: 16, cap: 5 },
+    { item: 'rewind', rarity: 0, weight: 46, cap: 6 },
+    { item: 'hammer', rarity: 1, weight: 26, cap: 5 },
+    { item: 'blueprint', rarity: 2, weight: 12, cap: 5 },
+    { item: 'swap', rarity: 2, weight: 10, cap: 4 },
     { item: 'seed', rarity: 3, weight: 6, cap: 3 },
   ],
   // Points awarded instead of an item when every item is at its cap.
@@ -151,9 +152,32 @@ export function isStuck(s) {
   return emptyCells(s).length === 0 && !hasMerge(s);
 }
 
-/** True when an item can free a stuck board: a hammer, or a rewind with history to undo. */
+/** A pair of tiles whose swap leaves a merge on the board, or null. */
+export function findHelpfulSwap(s) {
+  const b = s.board;
+  for (let i = 0; i < CELLS; i++) {
+    for (let j = i + 1; j < CELLS; j++) {
+      if (b[i] === b[j]) continue;
+      [b[i], b[j]] = [b[j], b[i]];
+      const helps = hasMerge(s);
+      [b[i], b[j]] = [b[j], b[i]];
+      if (helps) return [i, j];
+    }
+  }
+  return null;
+}
+
+/** The items that can free a stuck board right now. */
+export function rescueItems(s) {
+  const out = [];
+  if (s.items.rewind > 0 && s.history.length > 0) out.push('rewind');
+  if (s.items.hammer > 0) out.push('hammer');
+  if (s.items.swap > 0 && findHelpfulSwap(s)) out.push('swap');
+  return out;
+}
+
 export function canRescue(s) {
-  return s.items.hammer > 0 || (s.items.rewind > 0 && s.history.length > 0);
+  return rescueItems(s).length > 0;
 }
 
 function checkOver(s) {
@@ -215,6 +239,16 @@ export function useHammer(s, cell) {
   s.items.hammer--;
   s.history = [];
   return { type: 'hammer', cell, level };
+}
+
+/** Trades the contents of two tiles. The first must hold a block, and the second may be empty. */
+export function useSwap(s, a, b) {
+  if (s.over || s.items.swap <= 0 || a === b || s.board[a] === 0) return null;
+  snapshot(s);
+  [s.board[a], s.board[b]] = [s.board[b], s.board[a]];
+  s.items.swap--;
+  checkOver(s);
+  return { type: 'swap', a, b };
 }
 
 export function useRewind(s) {

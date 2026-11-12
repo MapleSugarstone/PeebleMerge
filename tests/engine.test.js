@@ -183,14 +183,14 @@ test('merges give XP equal to the new level', () => {
 });
 
 test('XP needed grows by step and stops at the max', () => {
-  assert.equal(G.xpNeeded(1), 60);
-  assert.equal(G.xpNeeded(2), 85);
-  assert.equal(G.xpNeeded(100), 400);
+  assert.equal(G.xpNeeded(1), 50);
+  assert.equal(G.xpNeeded(2), 72);
+  assert.equal(G.xpNeeded(100), 360);
 });
 
 test('a level-up drops one item, carries extra XP over, and respects caps', () => {
-  const s = game([4, 4, _, _, _, _, _, _, _, _, _, _, _, _, _, _], { xp: 58 });
-  s.items = { hammer: 5, rewind: 6, blueprint: 5, seed: 0 };
+  const s = game([4, 4, _, _, _, _, _, _, _, _, _, _, _, _, _, _], { xp: 48 });
+  s.items = { hammer: 5, rewind: 6, blueprint: 5, swap: 4, seed: 0 };
   const ev = G.merge(s, 0, 1, () => 0);
   assert.equal(s.plv, 2);
   assert.equal(s.xp, 3);
@@ -200,22 +200,64 @@ test('a level-up drops one item, carries extra XP over, and respects caps', () =
 
 test('rarity weights pick commons most often', () => {
   const s = G.newGame();
-  s.items = { hammer: 0, rewind: 0, blueprint: 0, seed: 0 };
+  s.items = { hammer: 0, rewind: 0, blueprint: 0, swap: 0, seed: 0 };
   const counts = {};
   for (let i = 0; i < 20000; i++) {
     const d = G.rollDrop(s);
     counts[d.item] = (counts[d.item] || 0) + 1;
   }
-  assert.ok(Math.abs(counts.rewind / 20000 - 0.5) < 0.02);
+  assert.ok(Math.abs(counts.rewind / 20000 - 0.46) < 0.02);
+  assert.ok(Math.abs(counts.swap / 20000 - 0.1) < 0.015);
   assert.ok(Math.abs(counts.seed / 20000 - 0.06) < 0.01);
 });
 
 test('every item at its cap gives bonus points instead', () => {
-  const s = game([4, 4, _, _, _, _, _, _, _, _, _, _, _, _, _, _], { xp: 59 });
-  s.items = { hammer: 5, rewind: 6, blueprint: 5, seed: 3 };
+  const s = game([4, 4, _, _, _, _, _, _, _, _, _, _, _, _, _, _], { xp: 49 });
+  s.items = { hammer: 5, rewind: 6, blueprint: 5, swap: 4, seed: 3 };
   const ev = G.merge(s, 0, 1);
   assert.equal(ev.levelUp.item, null);
   assert.equal(s.score, G.points(5) + G.CONFIG.fullBonus);
+});
+
+test('swap trades two tiles, moves a block to an empty tile, and can be rewound', () => {
+  const s = game([1, 2, _, _, _, _, _, _, _, _, _, _, _, _, _, 5]);
+  s.items.swap = 2;
+  assert.ok(G.useSwap(s, 0, 15));
+  assert.equal(s.board[0], 5);
+  assert.equal(s.board[15], 1);
+  assert.ok(G.useSwap(s, 1, 2));
+  assert.deepEqual(s.board.slice(0, 3), [5, 0, 2]);
+  assert.equal(s.items.swap, 0);
+  assert.equal(G.useSwap(s, 0, 1), null, 'none left');
+  G.useRewind(s);
+  assert.deepEqual(s.board.slice(0, 3), [5, 2, 0]);
+});
+
+test('swap needs a block in the first tile', () => {
+  const s = game([_, 2, _, _, _, _, _, _, _, _, _, _, _, _, _, _]);
+  assert.equal(G.useSwap(s, 0, 1), null);
+  assert.equal(G.useSwap(s, 1, 1), null);
+});
+
+test('a swap that can make a merge rescues a stuck board', () => {
+  const s = game(CHECKER, { next: 3 });
+  s.items = { hammer: 0, rewind: 0, blueprint: 0, swap: 1, seed: 0 };
+  G.place(s, () => 0);
+  assert.ok(G.isStuck(s));
+  assert.equal(s.over, false);
+  assert.deepEqual(G.rescueItems(s), ['swap']);
+  const [a, b] = G.findHelpfulSwap(s);
+  G.useSwap(s, a, b);
+  assert.ok(G.hasMerge(s));
+});
+
+test('a swap that cannot make a merge is not a rescue', () => {
+  // Only the max-level blocks repeat, and those never merge.
+  const s = game([14, 1, 14, 2, 3, 14, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+  s.items = { hammer: 0, rewind: 0, blueprint: 0, swap: 1, seed: 0 };
+  assert.ok(G.isStuck(s));
+  assert.equal(G.findHelpfulSwap(s), null);
+  assert.equal(G.canRescue(s), false);
 });
 
 test('rewind does not take back XP', () => {
@@ -245,7 +287,11 @@ test('a greedy bot plays legal runs to the end', () => {
         if (t.length) merged = !!G.merge(s, i, t[0]);
       }
       if (merged) continue;
-      if (G.isStuck(s)) assert.ok(G.useHammer(s, 0) || G.useRewind(s), 'a stuck run that is not over must have a rescue');
+      if (G.isStuck(s)) {
+        const pair = G.findHelpfulSwap(s);
+        const rescued = G.useHammer(s, 0) || G.useRewind(s) || (pair && G.useSwap(s, pair[0], pair[1]));
+        assert.ok(rescued, 'a stuck run that is not over must have a rescue');
+      }
       else assert.ok(G.place(s), 'place must succeed when the board has room');
     }
     assert.ok(s.over);

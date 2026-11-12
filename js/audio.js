@@ -250,7 +250,7 @@ function chime(f, at = 0, vol = 0.06, dur = 0.7) {
   voice({ w: 'sine', f: [f, f * 1.001], dur, vol, at, a: 0.02, fm: [2, 0.35, 0] });
 }
 
-export const SFX = ['place', 'merge', 'select', 'deselect', 'toolOn', 'toolOff', 'smash', 'rewind', 'blueprint', 'seed', 'levelUp', 'max', 'over', 'best', 'newRun'];
+export const SFX = ['place', 'merge', 'select', 'deselect', 'toolOn', 'toolOff', 'smash', 'rewind', 'blueprint', 'swap', 'seed', 'levelUp', 'max', 'over', 'best', 'newRun'];
 
 /** Plays a named effect. `level` is the block level for place, merge, and seed, and the rarity index for levelUp. */
 export function sfx(name, level = 1) {
@@ -293,6 +293,11 @@ export function sfx(name, level = 1) {
     case 'blueprint':
       chime(note(8), 0.08, 0.035, 0.45);
       chime(note(10), 0.2, 0.035, 0.6);
+      break;
+    // Two notes passing each other, one rising and one falling.
+    case 'swap':
+      voice({ w: 'sine', f: [note(6), note(9)], dur: 0.3, vol: 0.04, a: 0.04 });
+      voice({ w: 'sine', f: [note(9), note(6)], dur: 0.3, vol: 0.035, a: 0.04 });
       break;
     // A slow rise, then one bell.
     case 'seed':

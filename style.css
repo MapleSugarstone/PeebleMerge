@@ -340,6 +340,14 @@ button:disabled { cursor: default; }
 }
 .cell.target::after { box-shadow: 0 0 0 4px var(--target); animation: breathe 0.9s ease-in-out infinite; }
 .cell.hammer-target::after { box-shadow: 0 0 0 3px var(--danger); }
+.cell.swap-target::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: calc(var(--radius) + 3px);
+  pointer-events: none;
+  box-shadow: 0 0 0 3px #9b59d0;
+}
 .cell.drop-hover .block { transform: scale(1.1); }
 .cell.dragging .block { opacity: 0.35; }
 
@@ -373,8 +381,8 @@ button:disabled { cursor: default; }
 
 .tools {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
 }
 
 .tool {
@@ -390,7 +398,7 @@ button:disabled { cursor: default; }
   box-shadow: 0 3px 0 rgba(0, 0, 0, 0.1);
 }
 .tool svg { width: 26px; height: 26px; }
-.tool-name { font-size: 12px; font-weight: 600; }
+.tool-name { font-size: 11px; font-weight: 600; }
 .tool { border-bottom: 4px solid var(--rc, transparent); }
 .tool:disabled { opacity: 0.4; }
 .tool.gain { animation: merge-pop 0.45s ease-out; }

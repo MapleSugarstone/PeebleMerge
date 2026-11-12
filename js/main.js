@@ -40,7 +40,8 @@ let state = load(RUN_KEY);
 if (!G.isValidState(state)) state = G.newGame();
 G.migrate(state);
 
-let mode = null;      // null | 'hammer' | 'blueprint' | 'seed'
+let mode = null;      // null | 'hammer' | 'blueprint' | 'swap' | 'seed'
+let swapFrom = null;  // the first tile picked in swap mode
 let selected = null;  // index of the selected block
 let press = null;     // active pointer on the board
 
@@ -61,7 +62,7 @@ const xpFill = $('xp-fill');
 const xpText = $('xp-text');
 const toast = $('drop-toast');
 
-const ITEM_NAMES = { hammer: 'Hammer', rewind: 'Rewind', blueprint: 'Blueprint', seed: 'Seed' };
+const ITEM_NAMES = { hammer: 'Hammer', rewind: 'Rewind', blueprint: 'Blueprint', swap: 'Swap', seed: 'Seed' };
 const RARITY_NAMES = ['Common', 'Uncommon', 'Rare', 'Epic'];
 
 for (const btn of toolsEl.querySelectorAll('.tool')) {
@@ -136,6 +137,7 @@ function blockEl(level) {
 setTheme(theme.id);
 
 function render(ev = null) {
+  if (mode !== 'swap') swapFrom = null;
   const targets = selected !== null ? G.mergeTargets(state, selected) : [];
   for (let i = 0; i < cellCount; i++) {
     const c = cells[i];
@@ -143,13 +145,16 @@ function render(ev = null) {
     c.replaceChildren();
     c.className = 'cell';
     if (lv) c.appendChild(blockEl(lv));
-    if (i === selected) c.classList.add('selected');
+    if (i === selected || i === swapFrom) c.classList.add('selected');
     if (targets.includes(i)) c.classList.add('target');
     if (mode === 'blueprint' && !lv) c.classList.add('can-place');
     if (mode === 'hammer' && lv) c.classList.add('hammer-target');
+    if (mode === 'swap' && i !== swapFrom && (lv || swapFrom !== null)) c.classList.add('swap-target');
   }
 
-  if (ev && ev.cell !== undefined && ev.type !== 'hammer') {
+  if (ev && ev.type === 'swap') {
+    for (const i of [ev.a, ev.b]) cells[i].firstChild?.classList.add('pop');
+  } else if (ev && ev.cell !== undefined && ev.type !== 'hammer') {
     const b = cells[ev.cell].firstChild;
     if (b) b.classList.add(ev.type === 'merge' ? 'merge-pop' : 'pop');
     if (ev.points) floatPoints(ev.cell, ev.points);
@@ -167,14 +172,15 @@ function render(ev = null) {
     hammer: it.hammer > 0 && filled > 0,
     rewind: it.rewind > 0 && state.history.length > 0,
     blueprint: it.blueprint > 0 && empty > 0,
+    swap: it.swap > 0 && filled > 0,
     seed: it.seed > 0 && empty > 0,
   };
-  const stuck = !state.over && G.isStuck(state);
+  const rescuers = !state.over && G.isStuck(state) ? G.rescueItems(state) : [];
   for (const btn of toolsEl.querySelectorAll('.tool')) {
     const t = btn.dataset.tool;
     btn.disabled = state.over || !avail[t];
     btn.classList.toggle('active', mode === t);
-    btn.classList.toggle('rescue', stuck && avail[t] && mode !== t);
+    btn.classList.toggle('rescue', rescuers.includes(t) && mode !== t);
     const badge = btn.querySelector('.badge');
     badge.textContent = it[t];
     badge.classList.toggle('full', it[t] >= G.capOf(t));
@@ -208,6 +214,7 @@ function playFor(ev, via) {
   else if (ev.type === 'merge') sfx(ev.level >= G.CONFIG.maxLevel ? 'max' : 'merge', ev.level);
   else if (ev.type === 'hammer') sfx('smash');
   else if (ev.type === 'rewind') sfx('rewind');
+  else if (ev.type === 'swap') sfx('swap');
   if (via === 'blueprint' || via === 'seed') sfx(via);
 }
 
@@ -376,6 +383,20 @@ function tap(i) {
   }
   if (mode === 'blueprint') {
     if (!lv) { mode = null; act(G.useBlueprint(state, i), 'blueprint'); }
+    return;
+  }
+  if (mode === 'swap') {
+    if (swapFrom === null) {
+      if (lv) { swapFrom = i; sfx('select'); render(); }
+    } else if (i === swapFrom) {
+      swapFrom = null;
+      sfx('deselect');
+      render();
+    } else {
+      const from = swapFrom;
+      mode = null;
+      act(G.useSwap(state, from, i));
+    }
     return;
   }
   if (mode === 'seed') { mode = null; sfx('toolOff'); }
@@ -571,13 +592,14 @@ function showMenu() {
       <li>Press Place to drop the next block on a random empty tile.</li>
       <li>Drag a block onto a matching block above, below, or beside it to merge them.</li>
       <li>Bigger blocks are worth more points.</li>
-      <li>The run ends when the board is full, nothing can merge, and you have no Hammer or Rewind to use.</li>
+      <li>The run ends when the board is full, nothing can merge, and no item can help.</li>
     </ul>
     <h2>Items</h2>
     <ul>
       <li>Hammer removes a block.</li>
       <li>Rewind undoes your last move, up to ${G.CONFIG.undoDepth} times in a row.</li>
       <li>Blueprint lets you pick where the next block goes.</li>
+      <li>Swap trades the places of two tiles.</li>
       <li>Seed places a block of level 1 to 5 that you choose.</li>
     </ul>
     <h2>Levels</h2>

@@ -47,6 +47,8 @@ function playRun(rng) {
       let victim = 0;
       for (let i = 0; i < CELLS; i++) if (rank[i] > rank[victim]) victim = i;
       if (G.useHammer(s, victim)) { use('hammer'); continue; }
+      const pair = G.findHelpfulSwap(s);
+      if (pair && G.useSwap(s, pair[0], pair[1])) { use('swap'); continue; }
     }
     const empty = G.emptyCells(s);
     // With one tile left and nothing to merge, a bad placement can leave the board stuck. Use an item first.
