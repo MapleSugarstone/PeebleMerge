@@ -126,8 +126,11 @@ function blockEl(level) {
   const [c, t] = COLORS[level] || ['#333333', '#ffffff'];
   b.style.setProperty('--c', c);
   b.style.setProperty('--t', t);
+  b.setAttribute('role', 'img');
+  b.setAttribute('aria-label', `Level ${level}`);
   if (level <= theme.icons) {
-    b.innerHTML = `<img class="icon" src="${iconUrl(level)}" alt="Level ${level}" draggable="false"><span class="corner">${level}</span>`;
+    // An empty alt keeps the browser from drawing fallback text while a new image decodes.
+    b.innerHTML = `<img class="icon" src="${iconUrl(level)}" alt="" draggable="false"><span class="corner">${level}</span>`;
   } else {
     b.innerHTML = `<span class="block-inner"><span class="lv">Lv</span><span class="num">${level}</span></span>`;
   }
@@ -136,15 +139,23 @@ function blockEl(level) {
 
 setTheme(theme.id);
 
+const cellKeys = new Array(cellCount).fill(null);
+let nextKey = null;
+
 function render(ev = null) {
   if (mode !== 'swap') swapFrom = null;
   const targets = selected !== null ? G.mergeTargets(state, selected) : [];
   for (let i = 0; i < cellCount; i++) {
     const c = cells[i];
     const lv = state.board[i];
-    c.replaceChildren();
+    // Only a tile whose block changed gets a new element, so unchanged icons never reload.
+    const key = lv ? `${theme.id}:${lv}` : '';
+    if (cellKeys[i] !== key) {
+      c.replaceChildren();
+      if (lv) c.appendChild(blockEl(lv));
+      cellKeys[i] = key;
+    }
     c.className = 'cell';
-    if (lv) c.appendChild(blockEl(lv));
     if (i === selected || i === swapFrom) c.classList.add('selected');
     if (targets.includes(i)) c.classList.add('target');
     if (mode === 'blueprint' && !lv) c.classList.add('can-place');
@@ -162,7 +173,11 @@ function render(ev = null) {
 
   scoreEl.textContent = fmt(state.score);
   bestEl.textContent = fmt(Math.max(stats.bestScore, state.score));
-  nextEl.replaceChildren(blockEl(state.next));
+  const nk = `${theme.id}:${state.next}`;
+  if (nextKey !== nk) {
+    nextEl.replaceChildren(blockEl(state.next));
+    nextKey = nk;
+  }
 
   const empty = G.emptyCells(state).length;
   const filled = cellCount - empty;
