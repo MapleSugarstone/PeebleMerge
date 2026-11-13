@@ -11,6 +11,8 @@ export const CONFIG = {
   seedLevels: [1, 2, 3, 4, 5],
   luxuryPlacements: 3,
   bloomCount: 3,
+  // Monolith lifts last for this many placements and merges.
+  monolithMoves: 2,
   // A merge gives XP equal to the new block's level. Level n needs min(base + step * (n - 1), max) XP.
   xp: { base: 50, step: 22, max: 360 },
   rarities: ['common', 'uncommon', 'rare', 'epic'],
@@ -40,11 +42,90 @@ export const MODES = {
       { item: 'bloom', rarity: 3, weight: 4, cap: 1 },
     ],
   },
+  space: {
+    startItems: { shuffle: 2, teleport: 2, beam: 2, gravity: 1, monolith: 0 },
+    drops: [
+      { item: 'shuffle', rarity: 0, weight: 40, cap: 5 },
+      { item: 'teleport', rarity: 1, weight: 26, cap: 5 },
+      { item: 'beam', rarity: 1, weight: 18, cap: 4 },
+      { item: 'gravity', rarity: 2, weight: 11, cap: 3 },
+      { item: 'monolith', rarity: 3, weight: 5, cap: 1 },
+    ],
+  },
+  // A Daily run carries the day's draw in `state.daily`, so this entry only marks the mode as known.
+  daily: { startItems: {}, drops: [] },
 };
 
 const CELLS = CONFIG.size * CONFIG.size;
 
-export const modeOf = (s) => MODES[s.mode] || MODES.classic;
+export const modeOf = (s) => (s.mode === 'daily' && s.daily ? s.daily : MODES[s.mode] || MODES.classic);
+
+// Seeded randomness. A run with `rngState` draws every random number from it and saves the state with the run,
+// so the same moves on the same day always give the same results.
+
+/** A 32-bit hash of a string (FNV-1a). */
+export function hashString(str) {
+  let h = 0x811c9dc5;
+  for (const ch of str) {
+    h ^= ch.codePointAt(0);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/** One step of a 32-bit generator: returns the next state and a number in [0, 1). */
+function stepRng(state) {
+  const next = (state + 0x6d2b79f5) >>> 0;
+  let x = next;
+  x = Math.imul(x ^ (x >>> 15), x | 1);
+  x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+  return [next, ((x ^ (x >>> 14)) >>> 0) / 4294967296];
+}
+
+/** The random source for a run: its saved seed when it has one, otherwise Math.random. */
+export function rngFor(s) {
+  if (typeof s?.rngState !== 'number') return Math.random;
+  return () => {
+    const [next, value] = stepRng(s.rngState);
+    s.rngState = next;
+    return value;
+  };
+}
+
+/** Today's date on the player's clock, as YYYY-MM-DD. */
+export function todayKey(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+const DAILY_ITEMS = 5;
+const RARITY_WEIGHT = [42, 26, 12, 5];
+
+/** The day's draw: five items from every mode with their usual rarity and cap, and a hue for the colors. */
+export function dailyConfig(date) {
+  let state = hashString('peeble-daily-items:' + date);
+  const rand = () => { const [next, value] = stepRng(state); state = next; return value; };
+  const pool = [];
+  for (const [m, def] of Object.entries(MODES)) {
+    for (const d of def.drops) pool.push({ ...d, start: def.startItems[d.item] ?? 0, from: m });
+  }
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const picked = pool.slice(0, DAILY_ITEMS).sort((a, b) => a.rarity - b.rarity);
+  return {
+    date,
+    hue: Math.floor(rand() * 360),
+    drops: picked.map((d) => ({ item: d.item, rarity: d.rarity, weight: RARITY_WEIGHT[d.rarity], cap: d.cap })),
+    startItems: Object.fromEntries(picked.map((d) => [d.item, Math.min(d.start, 2)])),
+  };
+}
+
+export function capFor(s, item) {
+  const d = modeOf(s).drops.find((x) => x.item === item);
+  return d ? d.cap : Infinity;
+}
 
 export function xpNeeded(plv) {
   const x = CONFIG.xp;
@@ -56,7 +137,7 @@ export function capOf(item, mode = 'classic') {
   return d ? d.cap : Infinity;
 }
 
-export function rollDrop(s, rng = Math.random) {
+export function rollDrop(s, rng = rngFor(s)) {
   const pool = modeOf(s).drops.filter((d) => (s.items[d.item] ?? 0) < d.cap);
   if (!pool.length) return null;
   let r = rng() * pool.reduce((n, d) => n + d.weight, 0);
@@ -99,22 +180,31 @@ export function rollLevel(rng = Math.random) {
   return w.length - 1;
 }
 
-export function newGame(rng = Math.random, mode = 'classic') {
+export function newGame(rng = Math.random, mode = 'classic', date = todayKey()) {
   const m = MODES[mode] ? mode : 'classic';
-  return {
+  const daily = m === 'daily' ? dailyConfig(date) : undefined;
+  const s = {
     mode: m,
+    daily,
+    rngState: daily ? hashString('peeble-daily-board:' + date) : undefined,
     board: new Array(CELLS).fill(0),
-    next: rollLevel(rng),
+    next: 0,
     score: 0,
     highest: 0,
-    items: { ...MODES[m].startItems },
+    items: { ...(daily ? daily.startItems : MODES[m].startItems) },
     luxury: [],
+    // How many levels Monolith has lifted each tile, and how many moves the lift has left.
+    lift: new Array(CELLS).fill(0),
+    monolith: 0,
     plv: 1,
     xp: 0,
     history: [],
     over: false,
     ended: null,
   };
+  if (!daily) { delete s.daily; delete s.rngState; }
+  s.next = rollLevel(daily ? rngFor(s) : rng);
+  return s;
 }
 
 export function neighbors(i) {
@@ -157,8 +247,37 @@ export function hasMerge(s) {
 }
 
 function snapshot(s) {
-  s.history.push({ board: s.board.slice(), next: s.next, score: s.score, highest: s.highest, luxury: s.luxury.slice() });
+  s.history.push({ board: s.board.slice(), next: s.next, score: s.score, highest: s.highest, luxury: s.luxury.slice(), lift: s.lift.slice(), monolith: s.monolith });
   if (s.history.length > CONFIG.undoDepth) s.history.shift();
+}
+
+/** Moves a tile's block and its Monolith lift together. */
+function moveTile(s, from, to) {
+  s.board[to] = s.board[from];
+  s.lift[to] = s.lift[from];
+  s.board[from] = 0;
+  s.lift[from] = 0;
+}
+
+function clearTile(s, cell) {
+  s.board[cell] = 0;
+  s.lift[cell] = 0;
+}
+
+/** Counts down a Monolith lift after a placement or merge, and drops lifted tiles back when it runs out. */
+function tickMonolith(s) {
+  if (!(s.monolith > 0)) return null;
+  s.monolith--;
+  if (s.monolith > 0) return null;
+  const cells = [];
+  for (let i = 0; i < CELLS; i++) {
+    if (s.lift[i] > 0) {
+      s.board[i] = Math.max(1, s.board[i] - s.lift[i]);
+      s.lift[i] = 0;
+      cells.push(i);
+    }
+  }
+  return cells;
 }
 
 function addBlock(s, cell, level) {
@@ -210,6 +329,7 @@ export function spinRing(corner) {
 }
 
 function rotated(board, corner, dir) {
+  // Also turns the Monolith lift array, which has the same shape as the board.
   const ring = spinRing(corner);
   const out = board.slice();
   const step = dir === 'cw' ? 1 : 3;
@@ -249,6 +369,9 @@ export function rescueItems(s) {
   if (it.spin > 0 && findHelpfulSpin(s)) out.push('spin');
   if (it.scorch > 0 && scorchCells(s).length) out.push('scorch');
   if (it.bloom > 0 && bloomCells(s).length) out.push('bloom');
+  if (it.shuffle > 0 && hasPair(s)) out.push('shuffle');
+  if (it.beam > 0 && findHelpfulBeam(s)) out.push('beam');
+  if (it.monolith > 0 && !(s.monolith > 0) && bloomCells(s).length) out.push('monolith');
   return out;
 }
 
@@ -264,7 +387,7 @@ function checkOver(s) {
 }
 
 // Places the upcoming block. Without a cell it goes to a random empty tile.
-export function place(s, rng = Math.random, cell = null) {
+export function place(s, rng = rngFor(s), cell = null) {
   if (s.over) return null;
   const empty = emptyCells(s);
   if (!empty.length) return null;
@@ -275,36 +398,42 @@ export function place(s, rng = Math.random, cell = null) {
   const boosted = level - s.next;
   s.luxury = s.luxury.map((n) => n - 1).filter((n) => n > 0);
   const gained = addBlock(s, target, level);
+  s.lift[target] = 0;
   s.next = rollLevel(rng);
+  const reverted = tickMonolith(s);
   checkOver(s);
-  return { type: 'place', cell: target, level, boosted, points: gained };
+  return { type: 'place', cell: target, level, boosted, points: gained, reverted };
 }
 
-export function merge(s, from, to, rng = Math.random) {
+export function merge(s, from, to, rng = rngFor(s)) {
   if (!canMerge(s, from, to)) return null;
   snapshot(s);
   const level = s.board[to] + 1;
-  s.board[from] = 0;
+  clearTile(s, from);
+  // A block made from a lifted tile keeps its new level.
+  s.lift[to] = 0;
   const gained = addBlock(s, to, level);
   const levelUp = gainXp(s, level, rng);
+  const reverted = tickMonolith(s);
   checkOver(s);
-  return { type: 'merge', from, cell: to, level, points: gained, xp: level, levelUp };
+  return { type: 'merge', from, cell: to, level, points: gained, xp: level, levelUp, reverted };
 }
 
-export function useBlueprint(s, cell, rng = Math.random) {
+export function useBlueprint(s, cell, rng = rngFor(s)) {
   if (!(s.items.blueprint > 0)) return null;
   const ev = place(s, rng, cell);
   if (ev) s.items.blueprint--;
   return ev;
 }
 
-export function useSeed(s, level, rng = Math.random) {
+export function useSeed(s, level, rng = rngFor(s)) {
   if (s.over || !(s.items.seed > 0) || !CONFIG.seedLevels.includes(level)) return null;
   const empty = emptyCells(s);
   if (!empty.length) return null;
   snapshot(s);
   const target = empty[Math.floor(rng() * empty.length)];
   const gained = addBlock(s, target, level);
+  s.lift[target] = 0;
   s.items.seed--;
   checkOver(s);
   return { type: 'place', cell: target, level, points: gained };
@@ -313,7 +442,7 @@ export function useSeed(s, level, rng = Math.random) {
 export function useHammer(s, cell) {
   if (s.over || !(s.items.hammer > 0) || s.board[cell] === 0) return null;
   const level = s.board[cell];
-  s.board[cell] = 0;
+  clearTile(s, cell);
   s.items.hammer--;
   s.history = [];
   return { type: 'hammer', cell, level };
@@ -324,6 +453,7 @@ export function useSwap(s, a, b) {
   if (s.over || !(s.items.swap > 0) || a === b || s.board[a] === 0) return null;
   snapshot(s);
   [s.board[a], s.board[b]] = [s.board[b], s.board[a]];
+  [s.lift[a], s.lift[b]] = [s.lift[b], s.lift[a]];
   s.items.swap--;
   checkOver(s);
   return { type: 'swap', a, b };
@@ -337,6 +467,8 @@ export function useRewind(s) {
   s.score = snap.score;
   s.highest = snap.highest;
   s.luxury = snap.luxury ?? [];
+  s.lift = snap.lift ?? new Array(CELLS).fill(0);
+  s.monolith = snap.monolith ?? 0;
   s.items.rewind--;
   return { type: 'rewind' };
 }
@@ -345,8 +477,7 @@ export function useRewind(s) {
 export function useScoot(s, from, to) {
   if (s.over || !(s.items.scoot > 0) || !scootTargets(s, from).includes(to)) return null;
   snapshot(s);
-  s.board[to] = s.board[from];
-  s.board[from] = 0;
+  moveTile(s, from, to);
   s.items.scoot--;
   checkOver(s);
   return { type: 'scoot', a: from, b: to };
@@ -359,6 +490,7 @@ export function useSpin(s, corner, dir) {
   if (board.every((v, i) => v === s.board[i])) return null;
   snapshot(s);
   s.board = board;
+  s.lift = rotated(s.lift, corner, dir);
   s.items.spin--;
   checkOver(s);
   return { type: 'spin', cells: spinRing(corner), dir };
@@ -378,13 +510,13 @@ export function useScorch(s) {
   if (s.over || !(s.items.scorch > 0) || !cells.length) return null;
   snapshot(s);
   const levels = cells.map((i) => s.board[i]);
-  for (const i of cells) s.board[i] = 0;
+  for (const i of cells) clearTile(s, i);
   s.items.scorch--;
   return { type: 'scorch', cells, levels };
 }
 
 /** Raises a few random blocks by one level each. */
-export function useBloom(s, rng = Math.random) {
+export function useBloom(s, rng = rngFor(s)) {
   const pool = bloomCells(s);
   if (s.over || !(s.items.bloom > 0) || !pool.length) return null;
   snapshot(s);
@@ -400,6 +532,193 @@ export function useBloom(s, rng = Math.random) {
   return { type: 'bloom', cells, points: gained };
 }
 
+// Space items.
+
+/** True when two blocks below the max level share a level, so some arrangement of the board could merge them. */
+function hasPair(s) {
+  const seen = new Set();
+  for (const v of s.board) {
+    if (v > 0 && v < CONFIG.maxLevel) {
+      if (seen.has(v)) return true;
+      seen.add(v);
+    }
+  }
+  return false;
+}
+
+/** Rearranges every tile on the board at random. */
+export function useShuffle(s, rng = rngFor(s)) {
+  if (s.over || !(s.items.shuffle > 0) || !s.board.some(Boolean)) return null;
+  let order = null;
+  // A shuffle that lands every block back on its own tile is drawn again.
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const p = Array.from({ length: CELLS }, (_, i) => i);
+    for (let i = CELLS - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [p[i], p[j]] = [p[j], p[i]];
+    }
+    if (p.some((to, from) => s.board[from] !== s.board[to])) { order = p; break; }
+  }
+  if (!order) return null;
+  snapshot(s);
+  const board = new Array(CELLS).fill(0), lift = new Array(CELLS).fill(0);
+  const moves = [];
+  order.forEach((to, from) => {
+    board[to] = s.board[from];
+    lift[to] = s.lift[from];
+    if (s.board[from]) moves.push({ from, to });
+  });
+  s.board = board;
+  s.lift = lift;
+  s.items.shuffle--;
+  checkOver(s);
+  return { type: 'shuffle', moves };
+}
+
+/** Moves a block to any empty tile. */
+export function useTeleport(s, from, to) {
+  if (s.over || !(s.items.teleport > 0) || from === to || !s.board[from] || s.board[to]) return null;
+  snapshot(s);
+  moveTile(s, from, to);
+  s.items.teleport--;
+  checkOver(s);
+  return { type: 'teleport', a: from, b: to };
+}
+
+/** The cells of row or column `index`, in order from left or top. */
+export function beamLine(axis, index) {
+  const n = CONFIG.size;
+  return Array.from({ length: n }, (_, k) => (axis === 'row' ? index * n + k : k * n + index));
+}
+
+function cycled(arr, line, shift) {
+  const n = line.length;
+  const out = arr.slice();
+  line.forEach((cell, k) => { out[line[(k + shift) % n]] = arr[cell]; });
+  return out;
+}
+
+/** Cycles a row or column by `shift` tiles toward the right or bottom. Tiles that leave one end come back at the other. */
+export function useBeam(s, axis, index, shift) {
+  const n = CONFIG.size;
+  const k = ((Math.round(shift) % n) + n) % n;
+  if (s.over || !(s.items.beam > 0) || !k || (axis !== 'row' && axis !== 'col') || !(index >= 0 && index < n)) return null;
+  const line = beamLine(axis, index);
+  const board = cycled(s.board, line, k);
+  if (board.every((v, i) => v === s.board[i])) return null;
+  snapshot(s);
+  s.board = board;
+  s.lift = cycled(s.lift, line, k);
+  s.items.beam--;
+  checkOver(s);
+  return { type: 'beam', axis, index, shift: k, cells: line };
+}
+
+/** A row or column and shift that leaves a merge on the board, or null. */
+export function findHelpfulBeam(s) {
+  const n = CONFIG.size;
+  for (const axis of ['row', 'col']) {
+    for (let index = 0; index < n; index++) {
+      const line = beamLine(axis, index);
+      for (let k = 1; k < n; k++) {
+        if (hasMerge({ ...s, board: cycled(s.board, line, k) })) return [axis, index, k];
+      }
+    }
+  }
+  return null;
+}
+
+/** Lines of cells ordered from the edge the tiles fall toward. */
+function fallLines(dir) {
+  const n = CONFIG.size;
+  const lines = [];
+  for (let a = 0; a < n; a++) {
+    const line = Array.from({ length: n }, (_, k) => {
+      if (dir === 'left') return a * n + k;
+      if (dir === 'right') return a * n + (n - 1 - k);
+      if (dir === 'up') return k * n + a;
+      return (n - 1 - k) * n + a;
+    });
+    lines.push(line);
+  }
+  return lines;
+}
+
+/** One pass of falling: every tile slides toward the edge, and two equal tiles that meet merge once. */
+function fallPass(board, lift, dir) {
+  const nb = new Array(CELLS).fill(0), nl = new Array(CELLS).fill(0);
+  const moves = [], merged = [];
+  for (const line of fallLines(dir)) {
+    const tiles = line.filter((i) => board[i]);
+    let k = 0;
+    for (let j = 0; j < tiles.length; k++) {
+      const a = tiles[j], b = tiles[j + 1], dest = line[k];
+      if (b !== undefined && board[a] === board[b] && board[a] < CONFIG.maxLevel) {
+        nb[dest] = board[a] + 1;
+        moves.push({ from: a, to: dest }, { from: b, to: dest });
+        merged.push(dest);
+        j += 2;
+      } else {
+        nb[dest] = board[a];
+        nl[dest] = lift[a];
+        if (a !== dest) moves.push({ from: a, to: dest });
+        j++;
+      }
+    }
+  }
+  const changed = nb.some((v, i) => v !== board[i]);
+  return { board: nb, lift: nl, moves, merged, changed };
+}
+
+/** True when pulling toward `dir` would move or merge any tile. */
+export function canFall(s, dir) {
+  return fallPass(s.board, s.lift, dir).changed;
+}
+
+/**
+ * Drops every tile toward `dir` ('up', 'down', 'left', 'right'). Tiles merge as they meet, pass after pass,
+ * until nothing moves. Each pass is returned so the board can show the tiles settling.
+ */
+export function useGravity(s, dir) {
+  if (s.over || !(s.items.gravity > 0) || !['up', 'down', 'left', 'right'].includes(dir)) return null;
+  let pass = fallPass(s.board, s.lift, dir);
+  if (!pass.changed) return null;
+  snapshot(s);
+  const frames = [];
+  let gained = 0;
+  for (let guard = 0; pass.changed && guard < 32; guard++) {
+    s.board = pass.board;
+    s.lift = pass.lift;
+    for (const cell of pass.merged) gained += addBlock(s, cell, s.board[cell]);
+    frames.push({ board: s.board.slice(), moves: pass.moves, merged: pass.merged });
+    pass = fallPass(s.board, s.lift, dir);
+  }
+  s.items.gravity--;
+  checkOver(s);
+  return { type: 'gravity', dir, frames, points: gained };
+}
+
+/** Lifts half the blocks 1 or 2 levels for the next few moves. A block merged from a lifted tile keeps its level. */
+export function useMonolith(s, rng = rngFor(s)) {
+  const pool = bloomCells(s);
+  if (s.over || !(s.items.monolith > 0) || s.monolith > 0 || !pool.length) return null;
+  const filled = s.board.filter(Boolean).length;
+  const count = Math.min(pool.length, Math.ceil(filled / 2));
+  snapshot(s);
+  const cells = [];
+  while (cells.length < count) {
+    const cell = pool.splice(Math.floor(rng() * pool.length), 1)[0];
+    const lift = Math.min(rng() < 0.5 ? 1 : 2, CONFIG.maxLevel - s.board[cell]);
+    s.board[cell] += lift;
+    s.lift[cell] = lift;
+    cells.push(cell);
+  }
+  s.monolith = CONFIG.monolithMoves;
+  s.items.monolith--;
+  checkOver(s);
+  return { type: 'monolith', cells };
+}
+
 export function endRun(s) {
   if (s.over) return;
   s.over = true;
@@ -408,9 +727,11 @@ export function endRun(s) {
 
 /** Fills fields that saves from older versions lack. */
 export function migrate(s) {
-  if (!MODES[s.mode]) s.mode = 'classic';
-  s.items = { ...MODES[s.mode].startItems, ...s.items };
+  if (!MODES[s.mode] || (s.mode === 'daily' && !s.daily)) s.mode = 'classic';
+  s.items = { ...modeOf(s).startItems, ...s.items };
   if (!Array.isArray(s.luxury)) s.luxury = [];
+  if (!Array.isArray(s.lift) || s.lift.length !== CELLS) s.lift = new Array(CELLS).fill(0);
+  if (typeof s.monolith !== 'number') s.monolith = 0;
   if (!Number.isInteger(s.plv) || s.plv < 1) s.plv = 1;
   if (typeof s.xp !== 'number' || s.xp < 0) s.xp = 0;
   return s;

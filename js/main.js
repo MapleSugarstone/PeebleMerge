@@ -40,10 +40,17 @@ const ITEMS = {
   luxury: { name: 'Luxury', use: 'now', tip: `Your next ${G.CONFIG.luxuryPlacements} blocks come in one level higher`, rule: `Luxury makes your next ${G.CONFIG.luxuryPlacements} blocks one level higher, and using two adds two levels.` },
   scorch: { name: 'Scorch', use: 'confirm', tip: 'Remove every level 1 and 2 block', rule: 'Scorch removes every level 1 and level 2 block.' },
   bloom: { name: 'Bloom', use: 'now', tip: `Raise ${G.CONFIG.bloomCount} random blocks by one level`, rule: `Bloom raises ${G.CONFIG.bloomCount} random blocks by one level.` },
+  shuffle: { name: 'Shuffle', use: 'now', tip: 'Shuffle the whole board', rule: 'Shuffle moves every tile to a random spot.' },
+  teleport: { name: 'Teleport', use: 'pair', tip: 'Move a block to any empty tile', rule: 'Teleport moves a block to any empty tile.' },
+  beam: { name: 'Beam', use: 'drag', tip: 'Drag a row or column to cycle it', rule: 'Beam lets you drag a row or column like tape, and tiles that leave one end come back at the other.' },
+  gravity: { name: 'Gravity', use: 'direction', tip: 'Pull every tile one way', rule: 'Gravity pulls every tile one way, and matching tiles merge as they land.' },
+  monolith: { name: 'Monolith', use: 'now', tip: `Lift half the blocks 1 or 2 levels for ${G.CONFIG.monolithMoves} moves`, rule: `Monolith lifts half the blocks 1 or 2 levels for your next ${G.CONFIG.monolithMoves} moves, and blocks you merge from them keep their level.` },
 };
 const MODE_INFO = {
   classic: { name: 'Classic', color: '#e6f1d8', theme: 'garden' },
   fall: { name: 'Fall', color: '#fbe9d4', theme: 'autumn' },
+  space: { name: 'Space', color: '#1b1840', theme: 'space' },
+  daily: { name: 'Daily', color: '#eef0f6', theme: 'toys' },
 };
 const RARITY_NAMES = ['Common', 'Uncommon', 'Rare', 'Epic'];
 
@@ -55,6 +62,9 @@ const THEMES = [
   { id: 'animals', name: 'Animals', icons: 14 },
   { id: 'sweets', name: 'Sweets', icons: 14 },
   { id: 'sea', name: 'Sea', icons: 14 },
+  { id: 'space', name: 'Space', icons: 14 },
+  // The toy set belongs to Daily alone.
+  { id: 'toys', name: 'Toys', icons: 14, only: 'daily' },
   { id: 'numbers', name: 'Numbers', icons: 0 },
 ];
 
@@ -75,7 +85,15 @@ stats.modes = savedStats.modes || { classic: { bestScore: savedStats.bestScore |
 for (const m of Object.keys(G.MODES)) stats.modes[m] ||= { bestScore: 0, runs: 0 };
 delete stats.bestScore;
 delete stats.runs;
-const modeStats = () => stats.modes[state.mode];
+// Daily keeps one record per day, so its best and runs start over each morning.
+function modeStats() {
+  const ms = stats.modes[state.mode];
+  if (state.mode === 'daily' && state.daily && ms.date !== state.daily.date) Object.assign(ms, { date: state.daily.date, bestScore: 0, runs: 0 });
+  return ms;
+}
+const todaysBest = () => (stats.modes.daily?.date === G.todayKey() ? stats.modes.daily.bestScore : 0);
+const bestLabel = () => (state.mode === 'daily' ? "Today's best" : `${MODE_INFO[state.mode].name} best`);
+const runsLabel = () => (state.mode === 'daily' ? "Today's runs" : `${MODE_INFO[state.mode].name} runs`);
 
 const themePrefs = load(THEME_KEY) || { classic: load('peeble.theme.v1') || MODE_INFO.classic.theme };
 
@@ -102,7 +120,8 @@ function saveRun() {
   try { localStorage.removeItem(RUN_KEY); } catch { /* storage unavailable */ }
 }
 
-const inProgress = (id) => runs[id] && !runs[id].over;
+// A Daily run counts only on its own day. Yesterday's unfinished one gives way to today's.
+const inProgress = (id) => runs[id] && !runs[id].over && (id !== 'daily' || runs[id].daily?.date === G.todayKey());
 
 /** Continues a mode's saved run, or starts a new one there when it has none in progress. */
 function chooseMode(id) {
@@ -175,6 +194,43 @@ spinArt.innerHTML = ['cw', 'ccw'].map((dir) =>
 spinLayer.appendChild(spinArt);
 wrapEl.appendChild(spinLayer);
 
+// Gravity's four pull buttons sit on the middle of each board edge.
+const PULLS = { up: 'pullUp', down: 'pullDown', left: 'pullLeft', right: 'pullRight' };
+const pullButtons = Object.entries(PULLS).map(([dir, icon]) => {
+  const b = document.createElement('button');
+  b.className = 'pull-btn';
+  b.dataset.dir = dir;
+  b.hidden = true;
+  b.setAttribute('aria-label', `Pull ${dir}`);
+  b.innerHTML = ICONS[icon];
+  b.addEventListener('click', () => doGravity(dir));
+  wrapEl.appendChild(b);
+  return b;
+});
+
+function renderPullButtons() {
+  const on = mode === 'gravity' && !state.over;
+  for (const b of pullButtons) {
+    b.hidden = !on;
+    if (on) b.disabled = !G.canFall(state, b.dataset.dir);
+  }
+}
+
+// While Monolith's lift lasts, a chip on the board counts the moves it has left.
+const monolithChip = document.createElement('div');
+monolithChip.className = 'monolith-chip';
+monolithChip.hidden = true;
+wrapEl.appendChild(monolithChip);
+
+function renderMonolithChip() {
+  const left = state.monolith || 0;
+  monolithChip.hidden = !left;
+  if (left) monolithChip.innerHTML = `${ICONS.monolith}<span>${left}</span>`;
+}
+
+// Gravity shows each settling pass in turn, and board input waits until it finishes.
+let busy = false;
+
 const pt = (p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`;
 
 /** Draws one corner arrow as a curve from p0 to p2 bent toward the corner c, with its head at p2. */
@@ -194,8 +250,12 @@ function drawArc(dir, p0, c, p2) {
 let theme = THEMES[0];
 const iconUrl = (level) => `assets/blocks/${theme.id}/${level}.svg`;
 
+/** The block sets a mode may use: Daily uses only its own set, and other modes never see it. */
+const themesFor = (m) => THEMES.filter((t) => (m === 'daily' ? t.only === 'daily' : !t.only));
+
 function setTheme(id) {
-  theme = THEMES.find((t) => t.id === id) || THEMES.find((t) => t.id === MODE_INFO[state.mode].theme);
+  const allowed = themesFor(state.mode);
+  theme = allowed.find((t) => t.id === id) || allowed.find((t) => t.id === MODE_INFO[state.mode].theme) || allowed[0];
   themePrefs[state.mode] = theme.id;
   store(THEME_KEY, themePrefs);
   document.body.classList.toggle('themed', theme.icons > 0);
@@ -220,12 +280,29 @@ function blockEl(level) {
   return b;
 }
 
+const PALETTE_VARS = ['--bg', '--panel', '--ink', '--muted', '--accent', '--accent-light', '--accent-dark', '--soft', '--board', '--cell'];
+
+/** A light color theme built around one hue, for the day's Daily run. */
+function dailyPalette(h) {
+  return {
+    '--bg': `hsl(${h} 45% 90%)`, '--panel': `hsl(${h} 60% 97%)`, '--ink': `hsl(${h} 35% 18%)`, '--muted': `hsl(${h} 15% 40%)`,
+    '--accent': `hsl(${h} 55% 42%)`, '--accent-light': `hsl(${h} 60% 68%)`, '--accent-dark': `hsl(${h} 55% 28%)`,
+    '--soft': `hsl(${h} 35% 92%)`, '--board': `hsl(${h} 32% 62%)`, '--cell': `hsl(${h} 38% 80%)`,
+  };
+}
+
 /** Builds the item buttons, the colors, and the block set for the current mode. */
 function applyMode() {
-  document.documentElement.dataset.mode = state.mode;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', MODE_INFO[state.mode].color);
+  const root = document.documentElement;
+  root.dataset.mode = state.mode;
+  const palette = state.mode === 'daily' && state.daily ? dailyPalette(state.daily.hue) : null;
+  for (const v of PALETTE_VARS) {
+    if (palette) root.style.setProperty(v, palette[v]);
+    else root.style.removeProperty(v);
+  }
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette ? palette['--bg'] : MODE_INFO[state.mode].color);
   toolsEl.replaceChildren();
-  for (const d of G.MODES[state.mode].drops) {
+  for (const d of G.modeOf(state).drops) {
     const item = ITEMS[d.item];
     const b = document.createElement('button');
     b.className = 'tool';
@@ -243,6 +320,7 @@ function clearAim() {
   mode = null;
   pick = null;
   spinCorner = null;
+  stopBeamDemo();
 }
 
 const cellKeys = new Array(cellCount).fill(null);
@@ -266,6 +344,11 @@ function usable() {
     luxury: has('luxury'),
     scorch: has('scorch') && state.board.some((v) => v === 1 || v === 2),
     bloom: has('bloom') && state.board.some((v) => v > 0 && v < G.CONFIG.maxLevel),
+    shuffle: has('shuffle') && filled > 0,
+    teleport: has('teleport') && filled > 0 && empty > 0,
+    beam: has('beam') && filled > 0,
+    gravity: has('gravity') && ['up', 'down', 'left', 'right'].some((d) => G.canFall(state, d)),
+    monolith: has('monolith') && !(state.monolith > 0) && state.board.some((v) => v > 0 && v < G.CONFIG.maxLevel),
   };
 }
 
@@ -296,7 +379,12 @@ function render(ev = null) {
     if (mode === 'scoot' && pick === null && G.scootTargets(state, i).length) c.classList.add('scoot-target');
     if (scootTo.includes(i)) c.classList.add('can-place');
     if (ring.includes(i)) c.classList.add('spin-sel');
+    if (mode === 'teleport' && pick === null && lv) c.classList.add('swap-target');
+    if (mode === 'teleport' && pick !== null && !lv) c.classList.add('can-place');
+    if (state.lift?.[i] > 0) c.classList.add('lifted');
   }
+  renderMonolithChip();
+  renderPullButtons();
 
   if (ev) animate(ev);
 
@@ -321,7 +409,7 @@ function render(ev = null) {
     btn.classList.toggle('rescue', rescuers.includes(t) && mode !== t);
     const badge = btn.querySelector('.badge');
     badge.textContent = n;
-    badge.classList.toggle('full', n >= G.capOf(t, state.mode));
+    badge.classList.toggle('full', n >= G.capFor(state, t));
   }
 
   const need = G.xpNeeded(state.plv);
@@ -428,24 +516,52 @@ function turn(ring, dir, ms = 420, fromDeg = null) {
   }
 }
 
-/** Swells a block that just went up a level, with a soft glow, then settles it. */
-function grow(cell, delay) {
+/** Swells a block that just went up a level, with a soft glow, then settles it. Bloom's lifts also show their points. */
+function grow(cell, delay, withPoints = true) {
   const el = cells[cell].firstChild;
-  const pts = G.points(state.board[cell]);
-  setTimeout(() => floatPoints(cell, pts), delay);
+  if (withPoints) {
+    const pts = G.points(state.board[cell]);
+    setTimeout(() => floatPoints(cell, pts), delay);
+  }
   if (!el || reduceMotion.matches) return;
   const rest = { transform: 'scale(1)', filter: 'brightness(1) drop-shadow(0 0 0 rgba(255, 255, 255, 0))' };
   const peak = { transform: 'scale(1.22)', filter: 'brightness(1.18) drop-shadow(0 0 10px rgba(255, 255, 255, 0.95))', offset: 0.4 };
   raise(el, el.animate([rest, peak, rest], { duration: 480, delay, easing: 'ease-out', fill: 'backwards' }));
 }
 
+/** Briefly shrinks a block that just dropped back from a Monolith lift. */
+function sink(cell) {
+  const el = cells[cell].firstChild;
+  if (!el || reduceMotion.matches) return;
+  el.animate([{ transform: 'scale(1)' }, { transform: 'scale(0.8)', offset: 0.4 }, { transform: 'scale(1)' }], { duration: 360, easing: 'ease-out' });
+}
+
+/** Fades a block out of one tile and into another. */
+function warp(from, to, level) {
+  if (reduceMotion.matches) return;
+  const ghost = blockEl(level);
+  ghost.classList.add('warp-out');
+  ghost.addEventListener('animationend', () => ghost.remove());
+  cells[from].appendChild(ghost);
+  const el = cells[to].firstChild;
+  if (el) raise(el, el.animate([{ transform: 'scale(0.2)', opacity: 0 }, { transform: 'scale(1.12)', opacity: 1, offset: 0.7 }, { transform: 'scale(1)', opacity: 1 }], { duration: 320, delay: 120, easing: 'ease-out', fill: 'backwards' }));
+}
+
 function animate(ev) {
   const pop = (i, cls = 'pop') => cells[i].firstChild?.classList.add(cls);
+  if (ev.reverted) ev.reverted.forEach(sink);
   if (ev.type === 'swap') { pop(ev.a); pop(ev.b); return; }
   if (ev.type === 'scoot') { if (!ev.dragged) slide(ev.b, ev.a); return; }
   if (ev.type === 'spin') { turn(ev.cells, ev.dir, 420, ev.fromDeg); return; }
   // The three tiles grow one after another, in time with Bloom's three rising bells.
   if (ev.type === 'bloom') { ev.cells.forEach((i, k) => grow(i, k * 120)); return; }
+  if (ev.type === 'monolith') { ev.cells.forEach((i, k) => grow(i, k * 50, false)); return; }
+  if (ev.type === 'shuffle') { ev.moves.forEach((m) => slide(m.to, m.from, 420)); return; }
+  if (ev.type === 'teleport') {
+    if (ev.dragged) pop(ev.b);
+    else warp(ev.a, ev.b, state.board[ev.b]);
+    return;
+  }
   if (ev.type === 'hammer' || ev.type === 'scorch') {
     const list = ev.type === 'hammer' ? [[ev.cell, ev.level]] : ev.cells.map((c, k) => [c, ev.levels[k]]);
     for (const [cell, level] of list) {
@@ -473,20 +589,66 @@ function floatPoints(cell, pts) {
   wrapEl.appendChild(el);
 }
 
-const SOUNDS = { hammer: 'smash', rewind: 'rewind', swap: 'swap', scoot: 'scoot', spin: 'spin', luxury: 'luxury', scorch: 'scorch', bloom: 'bloom' };
+const SOUNDS = {
+  hammer: 'smash', rewind: 'rewind', swap: 'swap', scoot: 'scoot', spin: 'spin', luxury: 'luxury', scorch: 'scorch', bloom: 'bloom',
+  shuffle: 'shuffle', teleport: 'teleport', beam: 'beam', gravity: 'gravity', monolith: 'monolith',
+};
 
 function playFor(ev, via) {
   if (ev.type === 'place') sfx('place', ev.level);
   else if (ev.type === 'merge') sfx(ev.level >= G.CONFIG.maxLevel ? 'max' : 'merge', ev.level);
   else if (SOUNDS[ev.type]) sfx(SOUNDS[ev.type]);
   if (via === 'blueprint' || via === 'seed') sfx(via);
+  if (ev.reverted) setTimeout(() => sfx('revert'), 200);
+}
+
+/** Draws a board's blocks without touching tile highlights, for showing Gravity's passes one at a time. */
+function paintBlocks(board) {
+  for (let i = 0; i < cellCount; i++) {
+    const lv = board[i];
+    const key = lv ? `${theme.id}:${lv}` : '';
+    if (cellKeys[i] === key) continue;
+    cells[i].replaceChildren();
+    if (lv) cells[i].appendChild(blockEl(lv));
+    cellKeys[i] = key;
+  }
+}
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Shows each Gravity pass: tiles slide to where they land, then merged tiles pop and chime. */
+async function playGravity(ev) {
+  const step = reduceMotion.matches ? 0 : 170;
+  for (const frame of ev.frames) {
+    paintBlocks(frame.board);
+    for (const cell of new Set(frame.moves.map((m) => m.to))) {
+      const sources = frame.moves.filter((m) => m.to === cell && m.from !== cell);
+      // A merged tile slides in from the partner that traveled farther.
+      const from = sources.sort((a, b) => Math.abs(b.from - cell) - Math.abs(a.from - cell))[0];
+      if (from) slide(cell, from.from, step - 20);
+    }
+    if (frame.merged.length) {
+      const top = Math.max(...frame.merged.map((c) => frame.board[c]));
+      setTimeout(() => {
+        for (const cell of frame.merged) {
+          cells[cell].firstChild?.classList.add('merge-pop');
+          floatPoints(cell, G.points(frame.board[cell]));
+        }
+        sfx('merge', top);
+      }, step - 20);
+    }
+    await wait(step);
+  }
 }
 
 function act(ev, via = null) {
   if (!ev) { render(); return; }
   playFor(ev, via);
   selected = null;
-  const made = ev.type === 'place' || ev.type === 'merge' ? [ev.level] : ev.type === 'bloom' ? ev.cells.map((i) => state.board[i]) : [];
+  const made = ev.type === 'place' || ev.type === 'merge' ? [ev.level]
+    : ev.type === 'bloom' ? ev.cells.map((i) => state.board[i])
+    : ev.type === 'gravity' ? ev.frames.flatMap((f) => f.merged.map((c) => f.board[c]))
+    : [];
   if (made.length) {
     for (const lv of made) if (!stats.seen.includes(lv)) stats.seen.push(lv);
     stats.bestLevel = Math.max(stats.bestLevel, ...made);
@@ -494,9 +656,27 @@ function act(ev, via = null) {
   }
   if (ev.type === 'merge' && navigator.vibrate) navigator.vibrate(12);
   saveRun();
+  if (ev.type === 'gravity') {
+    busy = true;
+    render();
+    // render() drew the settled board, so the passes are replayed over it from the start.
+    cellKeys.fill(null);
+    playGravity(ev).then(() => {
+      busy = false;
+      render();
+      if (state.over) finishRun();
+    });
+    return;
+  }
   render(ev);
   if (ev.levelUp) showLevelUp(ev.levelUp);
   if (state.over) finishRun();
+}
+
+function doGravity(dir) {
+  if (busy) return;
+  clearAim();
+  act(G.useGravity(state, dir));
 }
 
 let toastTimer = null;
@@ -584,9 +764,10 @@ function squareAt(x, y) {
 }
 
 boardEl.addEventListener('pointerdown', (e) => {
-  if (state.over || press) return;
+  if (state.over || press || busy) return;
   const i = cellAt(e.clientX, e.clientY);
   if (i === null) return;
+  stopBeamDemo();
   press = { id: e.pointerId, cell: i, x: e.clientX, y: e.clientY, dragging: false, ghost: null, hover: null };
   boardEl.setPointerCapture(e.pointerId);
 });
@@ -596,11 +777,14 @@ boardEl.addEventListener('pointermove', (e) => {
   if (!press.dragging) {
     if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < 10) return;
     if (mode === 'spin') startSpinDrag();
+    else if (mode === 'beam') startBeamDrag(e.clientX, e.clientY);
     else if (mode === 'scoot' && G.scootTargets(state, press.cell).length) startDrag('scoot');
+    else if (mode === 'teleport' && state.board[press.cell]) startDrag('teleport');
     else if (!mode && state.board[press.cell]) startDrag('merge');
     else return;
   }
   if (press.kind === 'spin') moveSpin(e.clientX, e.clientY);
+  else if (press.kind === 'beam') moveBeam(e.clientX, e.clientY);
   else moveGhost(e.clientX, e.clientY);
 });
 
@@ -610,12 +794,14 @@ boardEl.addEventListener('pointerup', (e) => {
   press = null;
   const to = cellAt(e.clientX, e.clientY);
   if (p.dragging && p.kind === 'spin') { endSpin(p.spin); return; }
+  if (p.dragging && p.kind === 'beam') { endBeam(p.beam); return; }
   if (p.dragging) {
     p.ghost.remove();
-    if (p.kind === 'scoot') {
-      if (to !== null && G.scootTargets(state, p.cell).includes(to)) {
+    if (p.kind === 'scoot' || p.kind === 'teleport') {
+      const ok = to !== null && (p.kind === 'scoot' ? G.scootTargets(state, p.cell).includes(to) : !state.board[to]);
+      if (ok) {
         clearAim();
-        const ev = G.useScoot(state, p.cell, to);
+        const ev = p.kind === 'scoot' ? G.useScoot(state, p.cell, to) : G.useTeleport(state, p.cell, to);
         if (ev) ev.dragged = true;
         act(ev);
       } else {
@@ -634,6 +820,14 @@ boardEl.addEventListener('pointerup', (e) => {
     }
     return;
   }
+  // In Gravity mode a swipe across the board pulls the way it went.
+  if (mode === 'gravity') {
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    if (Math.hypot(dx, dy) >= 30) {
+      doGravity(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+    }
+    return;
+  }
   if (to === p.cell) tap(to, e.clientX, e.clientY);
 });
 
@@ -641,6 +835,7 @@ boardEl.addEventListener('pointercancel', () => {
   if (!press) return;
   if (press.ghost) press.ghost.remove();
   if (press.spin) { spinLayer.classList.remove('dragging'); poseSpin(press.spin, 0); }
+  if (press.beam) dropBeam(press.beam);
   press = null;
   selected = null;
   if (mode === 'scoot') pick = null;
@@ -650,9 +845,10 @@ boardEl.addEventListener('pointercancel', () => {
 function startDrag(kind) {
   press.dragging = true;
   press.kind = kind;
-  const was = kind === 'scoot' ? pick : selected;
+  const usesPick = kind === 'scoot' || kind === 'teleport';
+  const was = usesPick ? pick : selected;
   if (was !== press.cell) sfx('select');
-  if (kind === 'scoot') pick = press.cell;
+  if (usesPick) pick = press.cell;
   else selected = press.cell;
   render();
   const c = cells[press.cell];
@@ -670,8 +866,8 @@ function moveGhost(x, y) {
   press.ghost.style.left = x + 'px';
   press.ghost.style.top = y + 'px';
   const over = cellAt(x, y);
-  const ok = over !== null && (press.kind === 'scoot'
-    ? G.scootTargets(state, press.cell).includes(over)
+  const ok = over !== null && (press.kind === 'scoot' ? G.scootTargets(state, press.cell).includes(over)
+    : press.kind === 'teleport' ? !state.board[over]
     : G.canMerge(state, press.cell, over));
   const hover = ok ? over : null;
   if (hover === press.hover) return;
@@ -734,6 +930,158 @@ function endSpin(s) {
   render();
 }
 
+// Beam: the dragged row or column becomes a looping strip of tape. Three copies of the line sit end to end
+// inside a clipped window, so tiles leaving one end are already coming in at the other.
+
+/** Lifts a row or column off the board into a looping strip, hiding the real blocks underneath. */
+function buildBeamStrip(axis, index) {
+  const n = G.CONFIG.size;
+  const line = G.beamLine(axis, index);
+  const first = cells[line[0]], last = cells[line[n - 1]];
+  const pitch = axis === 'row' ? cells[line[1]].offsetLeft - first.offsetLeft : cells[line[1]].offsetTop - first.offsetTop;
+  const strip = document.createElement('div');
+  strip.className = 'beam-strip';
+  strip.style.left = first.offsetLeft + 'px';
+  strip.style.top = first.offsetTop + 'px';
+  strip.style.width = last.offsetLeft + last.offsetWidth - first.offsetLeft + 'px';
+  strip.style.height = last.offsetTop + last.offsetHeight - first.offsetTop + 'px';
+  const track = document.createElement('div');
+  track.className = 'beam-track';
+  for (let copy = -1; copy <= 1; copy++) {
+    line.forEach((cell, k) => {
+      if (!state.board[cell]) return;
+      const b = blockEl(state.board[cell]);
+      const at = (k + copy * n) * pitch;
+      b.style.left = (axis === 'row' ? at : 0) + 'px';
+      b.style.top = (axis === 'row' ? 0 : at) + 'px';
+      b.style.width = first.offsetWidth + 'px';
+      b.style.height = first.offsetHeight + 'px';
+      track.appendChild(b);
+    });
+  }
+  strip.appendChild(track);
+  boardEl.appendChild(strip);
+  for (const cell of line) if (cells[cell].firstChild) cells[cell].firstChild.style.visibility = 'hidden';
+  return { axis, index, line, pitch, strip, track };
+}
+
+function startBeamDrag(x, y) {
+  stopBeamDemo();
+  const n = G.CONFIG.size;
+  const axis = Math.abs(x - press.x) >= Math.abs(y - press.y) ? 'row' : 'col';
+  const index = axis === 'row' ? Math.floor(press.cell / n) : press.cell % n;
+  press.dragging = true;
+  press.kind = 'beam';
+  press.beam = { ...buildBeamStrip(axis, index), start: axis === 'row' ? press.x : press.y, offset: 0, steps: 0 };
+  sfx('select');
+}
+
+// Beam demo: when Beam is picked, a row and then a column slide part way and back with a fingertip on them,
+// so a new player sees that lines drag and that tiles loop around.
+
+let beamDemo = null;
+const BEAM_DEMO_KEY = 'peeble.beamDemoSeen.v1';
+
+function stopBeamDemo() {
+  if (beamDemo) beamDemo.cancel();
+  beamDemo = null;
+}
+
+/** The row or column with the most blocks, so the demo has something to show. */
+function busiestLine(axis) {
+  const n = G.CONFIG.size;
+  let best = null, most = 0;
+  for (let index = 0; index < n; index++) {
+    const count = G.beamLine(axis, index).filter((c) => state.board[c]).length;
+    if (count > most) { most = count; best = index; }
+  }
+  return best;
+}
+
+function demoBeam() {
+  stopBeamDemo();
+  if (reduceMotion.matches) return;
+  const plan = ['row', 'col'].map((axis) => [axis, busiestLine(axis)]).filter(([, index]) => index !== null);
+  if (!plan.length) return;
+  const live = [];
+  let cancelled = false;
+  beamDemo = {
+    cancel() {
+      cancelled = true;
+      for (const part of live) { part.anims.forEach((a) => a.cancel()); dropBeam(part.b); part.dot.remove(); }
+      live.length = 0;
+    },
+  };
+  (async () => {
+    await wait(250);
+    for (const [axis, index] of plan) {
+      if (cancelled || mode !== 'beam') return;
+      const b = buildBeamStrip(axis, index);
+      const mid = cells[b.line[1]];
+      const dot = document.createElement('div');
+      dot.className = 'beam-hint-dot';
+      dot.style.left = mid.offsetLeft + mid.offsetWidth / 2 + 'px';
+      dot.style.top = mid.offsetTop + mid.offsetHeight / 2 + 'px';
+      boardEl.appendChild(dot);
+      const prop = axis === 'row' ? 'translateX' : 'translateY';
+      const at = (px) => `${prop}(${px}px)`;
+      const far = b.pitch * 0.8;
+      const path = [0, 0, far, 0, 0];
+      const offsets = [0, 0.12, 0.5, 0.88, 1];
+      const track = b.track.animate(path.map((px, k) => ({ transform: at(px), offset: offsets[k] })), { duration: 1300, easing: 'ease-in-out' });
+      const finger = dot.animate(path.map((px, k) => ({ transform: at(px), opacity: k === 0 || k === 4 ? 0 : 1, offset: offsets[k] })), { duration: 1300, easing: 'ease-in-out' });
+      const part = { b, dot, anims: [track, finger] };
+      live.push(part);
+      await track.finished.catch(() => {});
+      if (cancelled) return;
+      dropBeam(b);
+      dot.remove();
+      live.splice(live.indexOf(part), 1);
+      await wait(200);
+    }
+    beamDemo = null;
+  })();
+}
+
+const wrapLoop = (d, length) => ((d % length) + length) % length;
+
+function placeTrack(b, d) {
+  const shift = wrapLoop(d, b.pitch * b.line.length);
+  b.track.style.transform = b.axis === 'row' ? `translateX(${shift}px)` : `translateY(${shift}px)`;
+}
+
+function moveBeam(x, y) {
+  const b = press.beam;
+  b.offset = (b.axis === 'row' ? x : y) - b.start;
+  placeTrack(b, b.offset);
+  // A soft tick each time a tile passes a slot, like a slot machine reel.
+  const steps = Math.round(b.offset / b.pitch);
+  if (steps !== b.steps) { b.steps = steps; sfx('tick'); }
+}
+
+function dropBeam(b) {
+  b.strip.remove();
+  for (const cell of b.line) if (cells[cell].firstChild) cells[cell].firstChild.style.visibility = '';
+}
+
+function endBeam(b) {
+  const shift = Math.round(b.offset / b.pitch);
+  const settle = () => {
+    dropBeam(b);
+    const n = G.CONFIG.size;
+    if (((shift % n) + n) % n === 0) { render(); return; }
+    clearAim();
+    act(G.useBeam(state, b.axis, b.index, shift));
+  };
+  if (reduceMotion.matches) { settle(); return; }
+  // The tape eases to the nearest slot before the board takes the new order.
+  const from = wrapLoop(b.offset, b.pitch * b.line.length);
+  const to = from + (shift * b.pitch - b.offset);
+  const prop = b.axis === 'row' ? 'translateX' : 'translateY';
+  b.track.animate([{ transform: `${prop}(${from}px)` }, { transform: `${prop}(${to}px)` }], { duration: 120, easing: 'ease-out', fill: 'forwards' })
+    .finished.then(settle, settle);
+}
+
 /** Picks the first tile of a two-tap item, or clears it when the same tile is tapped again. */
 function pickFirst(i, ok) {
   if (pick === i) { pick = null; sfx('deselect'); }
@@ -766,6 +1114,19 @@ function tap(i, x, y) {
       } else {
         pickFirst(i, G.scootTargets(state, i).length > 0);
       }
+      return;
+    case 'teleport':
+      if (pick !== null && pick !== i && !lv) {
+        const from = pick;
+        clearAim();
+        act(G.useTeleport(state, from, i));
+      } else {
+        pickFirst(i, lv > 0);
+      }
+      return;
+    case 'beam':
+    case 'gravity':
+      // Beam is dragged and Gravity is swiped or picked with its arrows, so a plain tap does nothing.
       return;
     case 'spin': {
       // A picked square stays picked until Spin is used or turned off.
@@ -802,6 +1163,7 @@ function tap(i, x, y) {
 // Controls
 
 placeBtn.addEventListener('click', () => {
+  if (busy) return;
   if (state.over) { showModePicker(true); return; }
   clearAim();
   act(G.place(state));
@@ -809,7 +1171,7 @@ placeBtn.addEventListener('click', () => {
 
 toolsEl.addEventListener('click', (e) => {
   const b = e.target.closest('.tool');
-  if (!b || b.disabled) return;
+  if (!b || b.disabled || busy) return;
   const t = b.dataset.tool;
   selected = null;
   if (ITEMS[t].use === 'now') {
@@ -817,6 +1179,8 @@ toolsEl.addEventListener('click', (e) => {
     if (t === 'rewind') act(G.useRewind(state));
     else if (t === 'luxury') act(G.useLuxury(state));
     else if (t === 'bloom') act(G.useBloom(state));
+    else if (t === 'shuffle') act(G.useShuffle(state));
+    else if (t === 'monolith') act(G.useMonolith(state));
     return;
   }
   const on = mode !== t;
@@ -824,6 +1188,11 @@ toolsEl.addEventListener('click', (e) => {
   if (on) mode = t;
   sfx(on ? 'toolOn' : 'toolOff');
   render();
+  // The demo plays by itself only the first time Beam is picked on this device.
+  if (mode === 'beam' && !load(BEAM_DEMO_KEY)) {
+    store(BEAM_DEMO_KEY, true);
+    demoBeam();
+  }
 });
 
 picker.addEventListener('click', (e) => {
@@ -963,18 +1332,21 @@ function tileHtml(level) {
 
 /** One card per mode, saying what tapping it does: keep playing, continue a saved run, or start a new one. */
 function modeCards() {
+  const today = G.dailyConfig(G.todayKey());
   return Object.entries(MODE_INFO).map(([id, info]) => {
-    const icons = G.MODES[id].drops.map((d) => `<span class="mode-icon" data-rarity="${d.rarity}" title="${ITEMS[d.item].name}">${ICONS[d.item]}</span>`).join('');
-    const best = stats.modes[id].bestScore;
+    const drops = id === 'daily' ? today.drops : G.MODES[id].drops;
+    const icons = drops.map((d) => `<span class="mode-icon" data-rarity="${d.rarity}" title="${ITEMS[d.item].name}">${ICONS[d.item]}</span>`).join('');
+    const best = id === 'daily' ? todaysBest() : stats.modes[id].bestScore;
+    const tint = id === 'daily' ? ` style="background: hsl(${today.hue} 45% 90%); border-color: hsl(${today.hue} 32% 62%); color: hsl(${today.hue} 35% 18%)"` : '';
     const here = id === state.mode && !firstShow;
     const status = here && !state.over ? 'Playing'
       : inProgress(id) && !here ? `Continue · ${fmt(runs[id].score)}`
       : 'New run';
-    return `<button class="mode-card${here && !state.over ? ' current' : ''}" data-action="mode" data-mode="${id}">
+    return `<button class="mode-card${here && !state.over ? ' current' : ''}" data-action="mode" data-mode="${id}"${tint}>
       <span class="mode-name">${info.name}</span>
       <span class="mode-icons">${icons}</span>
       <span class="mode-status">${status}</span>
-      <span class="mode-best">${best ? `Best ${fmt(best)}` : '&nbsp;'}</span>
+      <span class="mode-best">${best ? `${id === 'daily' ? 'Today' : 'Best'} ${fmt(best)}` : '&nbsp;'}</span>
     </button>`;
   }).join('');
 }
@@ -998,7 +1370,7 @@ function showGameOver(isBest) {
     <div class="result-row"><span>Score</span><strong>${fmt(state.score)}</strong></div>
     <div class="result-row"><span>Highest block</span>${state.highest ? tileHtml(state.highest) : '<strong>-</strong>'}</div>
     <div class="result-row"><span>Level reached</span><strong>${state.plv}</strong></div>
-    <div class="result-row"><span>${MODE_INFO[state.mode].name} best</span><strong>${fmt(modeStats().bestScore)}</strong></div>
+    <div class="result-row"><span>${bestLabel()}</span><strong>${fmt(modeStats().bestScore)}</strong></div>
     ${isBest ? '<p class="new-best">New best score</p>' : ''}
     <div class="sheet-actions">
       <button class="btn primary" data-action="new">New run</button>
@@ -1011,14 +1383,14 @@ function showMenu() {
   for (let lv = 1; lv <= G.CONFIG.maxLevel; lv++) {
     slots.push(`<div class="slot">${stats.seen.includes(lv) ? blockEl(lv).outerHTML : ''}</div>`);
   }
-  const themeBtns = THEMES.map((t) => {
+  const themeBtns = themesFor(state.mode).map((t) => {
     const preview = t.icons
       ? [1, 7, 14].map((lv) => `<img src="assets/blocks/${t.id}/${lv}.svg" alt="" draggable="false">`).join('')
       : '<span class="theme-nums">1 2 3</span>';
     return `<button class="theme-btn${t.id === theme.id ? ' active' : ''}" data-action="theme" data-theme="${t.id}">
       <span class="theme-preview">${preview}</span><span>${t.name}</span></button>`;
   }).join('');
-  const drops = G.MODES[state.mode].drops;
+  const drops = G.modeOf(state).drops;
   const ms = modeStats();
   openSheet(`
     <h2>Mode</h2>
@@ -1046,8 +1418,8 @@ function showMenu() {
     </ul>
     <h2>Collection</h2>
     <div class="collection">${slots.join('')}</div>
-    <div class="result-row"><span>${MODE_INFO[state.mode].name} best</span><strong>${fmt(ms.bestScore)}</strong></div>
-    <div class="result-row"><span>${MODE_INFO[state.mode].name} runs</span><strong>${fmt(ms.runs)}</strong></div>
+    <div class="result-row"><span>${bestLabel()}</span><strong>${fmt(ms.bestScore)}</strong></div>
+    <div class="result-row"><span>${runsLabel()}</span><strong>${fmt(ms.runs)}</strong></div>
     <div class="sheet-actions">
       ${state.over ? '<button class="btn primary" data-action="new">New run</button>' : '<button class="btn danger" data-action="confirm-end">End run</button>'}
       <button class="btn" data-action="close">Close</button>

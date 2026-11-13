@@ -54,7 +54,12 @@ function playRun(rng) {
       if (spin && G.useSpin(s, spin[0], spin[1])) { use('spin'); continue; }
       if (G.useScorch(s)) { use('scorch'); continue; }
       if (G.useBloom(s, rng)) { use('bloom'); continue; }
+      const beam = G.findHelpfulBeam(s);
+      if (beam && G.useBeam(s, beam[0], beam[1], beam[2])) { use('beam'); continue; }
+      if (G.useMonolith(s, rng)) { use('monolith'); continue; }
+      if (G.useShuffle(s, rng)) { use('shuffle'); continue; }
     }
+    if (s.items.gravity > 0 && G.emptyCells(s).length < 4 && G.useGravity(s, 'up')) { use('gravity'); continue; }
     if (s.items.luxury > 0 && G.useLuxury(s)) use('luxury');
     const empty = G.emptyCells(s);
     // With one tile left and nothing to merge, a bad placement can leave the board stuck. Use an item first.

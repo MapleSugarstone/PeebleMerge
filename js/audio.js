@@ -250,7 +250,7 @@ function chime(f, at = 0, vol = 0.06, dur = 0.7) {
   voice({ w: 'sine', f: [f, f * 1.001], dur, vol, at, a: 0.02, fm: [2, 0.35, 0] });
 }
 
-export const SFX = ['place', 'merge', 'select', 'deselect', 'toolOn', 'toolOff', 'smash', 'rewind', 'blueprint', 'swap', 'scoot', 'spin', 'luxury', 'scorch', 'bloom', 'seed', 'levelUp', 'max', 'over', 'best', 'newRun'];
+export const SFX = ['place', 'merge', 'select', 'deselect', 'toolOn', 'toolOff', 'smash', 'rewind', 'blueprint', 'swap', 'scoot', 'spin', 'luxury', 'scorch', 'bloom', 'shuffle', 'teleport', 'beam', 'tick', 'gravity', 'monolith', 'revert', 'seed', 'levelUp', 'max', 'over', 'best', 'newRun'];
 
 /** Plays a named effect. `level` is the block level for place, merge, and seed, and the rarity index for levelUp. */
 export function sfx(name, level = 1) {
@@ -321,6 +321,39 @@ export function sfx(name, level = 1) {
     // Three bells opening upward.
     case 'bloom':
       [note(7), note(9), note(11)].forEach((f, i) => chime(f, i * 0.12, 0.045, 0.7));
+      break;
+    // A quick scatter of notes across the scale.
+    case 'shuffle':
+      [9, 6, 11, 7, 10, 8].forEach((lv, i) => chime(note(lv), i * 0.045, 0.024, 0.25));
+      break;
+    // A shimmer that drops out, then reappears higher.
+    case 'teleport':
+      voice({ w: 'sine', f: [note(9), note(6)], dur: 0.14, vol: 0.035, a: 0.02 });
+      chime(note(11), 0.16, 0.04, 0.5);
+      break;
+    // A soft whoosh as the tape settles.
+    case 'beam':
+      voice({ w: 'noise', f: [900, 1600], dur: 0.18, vol: 0.025, a: 0.06, q: 1.2 });
+      chime(note(8), 0.08, 0.03, 0.35);
+      break;
+    // One faint click per tile that passes while Beam is dragged.
+    case 'tick':
+      voice({ w: 'sine', f: [880], dur: 0.04, vol: 0.012, a: 0.004 });
+      break;
+    // A low falling glide as everything drops.
+    case 'gravity':
+      voice({ w: 'sine', f: [440, 180], dur: 0.35, vol: 0.05, a: 0.03 });
+      break;
+    // A deep tone with a slow high shimmer over it.
+    case 'monolith':
+      voice({ w: 'sine', f: [98, 100], dur: 1.2, vol: 0.09, a: 0.08 });
+      voice({ w: 'sine', f: [note(11)], dur: 1.1, vol: 0.02, at: 0.15, a: 0.3, vib: [5, 15] });
+      voice({ w: 'sine', f: [note(13)], dur: 1, vol: 0.014, at: 0.3, a: 0.3 });
+      break;
+    // The lift wears off: two soft notes stepping down.
+    case 'revert':
+      chime(note(8), 0, 0.03, 0.3);
+      chime(note(6), 0.1, 0.03, 0.45);
       break;
     // A slow rise, then one bell.
     case 'seed':
