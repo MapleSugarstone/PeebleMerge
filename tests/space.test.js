@@ -81,14 +81,15 @@ test('gravity slides without merging when nothing matches, and refuses when noth
   assert.equal(s.items.gravity, 1);
 });
 
-test('monolith lifts half the blocks for three moves, then drops them back', () => {
+test('monolith lifts 75% of the blocks 1 to 3 levels for three moves, then drops them back', () => {
   const s = space([1, 2, 3, 4, _, _, _, _, _, _, _, _, _, _, _, _], { monolith: 1 });
   s.next = 1;
   const before = s.board.slice(0, 4);
   const ev = G.useMonolith(s, seq(0, 0.9));
-  assert.equal(ev.cells.length, 2);
+  assert.equal(ev.cells.length, 3, 'three of four blocks');
   const lifted = ev.cells.map((c) => s.board[c] - before[c]);
-  assert.ok(lifted.every((d) => d === 1 || d === 2));
+  assert.ok(lifted.every((d) => d >= 1 && d <= 3));
+  assert.ok(lifted.includes(3), 'a high roll lifts by 3');
   assert.equal(G.CONFIG.monolithMoves, 3);
   assert.equal(s.monolith, 3);
   assert.equal(G.useMonolith(s), null, 'one at a time');

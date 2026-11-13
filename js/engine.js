@@ -13,6 +13,9 @@ export const CONFIG = {
   bloomCount: 3,
   // Monolith lifts last for this many placements and merges.
   monolithMoves: 3,
+  // Monolith lifts this share of the blocks, each by 1 up to this many levels.
+  monolithShare: 0.75,
+  monolithMaxLift: 3,
   // A merge gives XP equal to the new block's level. Level n needs min(base + step * (n - 1), max) XP.
   xp: { base: 50, step: 22, max: 360 },
   rarities: ['common', 'uncommon', 'rare', 'epic'],
@@ -698,17 +701,17 @@ export function useGravity(s, dir) {
   return { type: 'gravity', dir, frames, points: gained };
 }
 
-/** Lifts half the blocks 1 or 2 levels for the next few moves. A block merged from a lifted tile keeps its level. */
+/** Lifts most of the blocks a random 1 to 3 levels for the next few moves. A block merged from a lifted tile keeps its level. */
 export function useMonolith(s, rng = rngFor(s)) {
   const pool = bloomCells(s);
   if (s.over || !(s.items.monolith > 0) || s.monolith > 0 || !pool.length) return null;
   const filled = s.board.filter(Boolean).length;
-  const count = Math.min(pool.length, Math.ceil(filled / 2));
+  const count = Math.min(pool.length, Math.ceil(filled * CONFIG.monolithShare));
   snapshot(s);
   const cells = [];
   while (cells.length < count) {
     const cell = pool.splice(Math.floor(rng() * pool.length), 1)[0];
-    const lift = Math.min(rng() < 0.5 ? 1 : 2, CONFIG.maxLevel - s.board[cell]);
+    const lift = Math.min(1 + Math.floor(rng() * CONFIG.monolithMaxLift), CONFIG.maxLevel - s.board[cell]);
     s.board[cell] += lift;
     s.lift[cell] = lift;
     cells.push(cell);

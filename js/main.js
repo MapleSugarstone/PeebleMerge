@@ -44,7 +44,7 @@ const ITEMS = {
   teleport: { name: 'Teleport', use: 'pair', tip: 'Move a block to any empty tile', rule: 'Teleport moves a block to any empty tile.' },
   beam: { name: 'Beam', use: 'drag', tip: 'Drag a row or column to cycle it', rule: 'Beam lets you drag a row or column like tape, and tiles that leave one end come back at the other.' },
   gravity: { name: 'Gravity', use: 'direction', tip: 'Pull every tile one way', rule: 'Gravity pulls every tile one way, and matching tiles merge as they land.' },
-  monolith: { name: 'Monolith', use: 'now', tip: `Lift half the blocks 1 or 2 levels for ${G.CONFIG.monolithMoves} moves`, rule: `Monolith lifts half the blocks 1 or 2 levels for your next ${G.CONFIG.monolithMoves} moves, and blocks you merge from them keep their level.` },
+  monolith: { name: 'Monolith', use: 'now', tip: `Lift ${G.CONFIG.monolithShare * 100}% of the blocks 1 to ${G.CONFIG.monolithMaxLift} levels for ${G.CONFIG.monolithMoves} moves`, rule: `Monolith lifts ${G.CONFIG.monolithShare * 100}% of the blocks 1 to ${G.CONFIG.monolithMaxLift} levels for your next ${G.CONFIG.monolithMoves} moves, and blocks you merge from them keep their level.` },
 };
 const MODE_INFO = {
   classic: { name: 'Classic', color: '#e6f1d8', theme: 'garden' },
