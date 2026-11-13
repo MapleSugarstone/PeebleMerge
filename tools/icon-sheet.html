@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Icon sheet</title>
+<style>
+  body { margin: 0; padding: 16px; width: 968px; font-family: system-ui, sans-serif; background: #f2f2ee; }
+  .grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .cell { background: #fff; border-radius: 12px; padding: 10px; text-align: center; font-size: 13px; color: #333; }
+  .big { width: 96px; height: 96px; margin: 0 auto 6px; color: #2c3a28; }
+  .big svg { width: 96px; height: 96px; }
+  .row { display: flex; justify-content: center; gap: 6px; margin-top: 6px; }
+  .chip { width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; }
+  .chip svg { width: 26px; height: 26px; }
+  .g { background: #4f8a3c; color: #fff; }
+  .o { background: #d9822b; color: #fff; }
+</style>
+</head>
+<body>
+<div class="grid" id="grid"></div>
+<div id="sets"></div>
+<script type="module">
+  import { ICONS } from '../js/icons.js';
+  document.getElementById('grid').innerHTML = Object.entries(ICONS).map(([name, svg]) =>
+    `<div class="cell"><div class="big">${svg}</div>${name}<div class="row"><div class="chip g">${svg}</div><div class="chip o">${svg}</div></div></div>`).join('');
+  const sets = new URLSearchParams(location.search).get('sets');
+  if (sets) {
+    document.getElementById('grid').hidden = true;
+    document.getElementById('sets').innerHTML = sets.split(',').map((set) =>
+      `<div class="set"><b>${set}</b><div class="tiles">${Array.from({ length: 14 }, (_, i) =>
+        `<div class="tile"><img src="../assets/blocks/${set}/${i + 1}.svg" alt=""><span>${i + 1}</span></div>`).join('')}</div></div>`).join('');
+  }
+</script>
+<style>
+  .grid[hidden] { display: none; }
+  .set { margin-bottom: 14px; font-size: 14px; }
+  .tiles { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 6px; }
+  .tile { position: relative; background: #fff; border-radius: 10px; padding: 8px; }
+  .tile img { width: 100%; display: block; }
+  .tile span { position: absolute; top: 4px; left: 6px; font-size: 12px; font-weight: 700; color: #666; }
+</style>
+</body>
+</html>

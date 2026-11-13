@@ -1,8 +1,9 @@
 // Plays many runs with a scripted player and reports how often levels and item drops arrive.
-// Usage: node tests/balance-sim.js [runs]
+// Usage: node tests/balance-sim.js [runs] [classic|fall]
 import * as G from '../js/engine.js';
 
 const RUNS = Number(process.argv[2] || 300);
+const MODE = process.argv[3] || 'classic';
 const N = G.CONFIG.size;
 const CELLS = N * N;
 
@@ -26,7 +27,7 @@ function bestMerge(s) {
 }
 
 function playRun(rng) {
-  const s = G.newGame(rng);
+  const s = G.newGame(rng, MODE);
   const stat = { placements: 0, merges: 0, xp: 0, gained: {}, used: {}, bonus: 0 };
   const use = (k) => { stat.used[k] = (stat.used[k] || 0) + 1; };
   let guard = 0;
@@ -49,7 +50,12 @@ function playRun(rng) {
       if (G.useHammer(s, victim)) { use('hammer'); continue; }
       const pair = G.findHelpfulSwap(s);
       if (pair && G.useSwap(s, pair[0], pair[1])) { use('swap'); continue; }
+      const spin = G.findHelpfulSpin(s);
+      if (spin && G.useSpin(s, spin[0], spin[1])) { use('spin'); continue; }
+      if (G.useScorch(s)) { use('scorch'); continue; }
+      if (G.useBloom(s, rng)) { use('bloom'); continue; }
     }
+    if (s.items.luxury > 0 && G.useLuxury(s)) use('luxury');
     const empty = G.emptyCells(s);
     // With one tile left and nothing to merge, a bad placement can leave the board stuck. Use an item first.
     if (empty.length === 1) {
@@ -94,12 +100,12 @@ const pct = (f, p) => { const v = runs.map(f).sort((a, b) => a - b); return v[Ma
 const byHighest = {};
 for (const r of runs) byHighest[r.highest] = (byHighest[r.highest] || 0) + 1;
 
-console.log(`runs: ${RUNS}`);
+console.log(`mode: ${MODE}, runs: ${RUNS}`);
 console.log(`highest block: ${Object.entries(byHighest).map(([k, v]) => `Lv${k} x${v}`).join(', ')}`);
 console.log(`placements per run: median ${pct((r) => r.placements, 0.5)}, p90 ${pct((r) => r.placements, 0.9)}`);
 console.log(`XP per placement: ${(avg((r) => r.xp) / avg((r) => r.placements)).toFixed(2)}`);
 console.log(`player level reached: median ${pct((r) => r.plv, 0.5)}, p90 ${pct((r) => r.plv, 0.9)}, max ${pct((r) => r.plv, 1)}`);
-for (const k of Object.keys(G.CONFIG.startItems)) {
+for (const k of Object.keys(G.MODES[MODE].startItems)) {
   console.log(`  ${k}: gained ${avg((r) => r.gained[k] || 0).toFixed(1)}, used ${avg((r) => r.used[k] || 0).toFixed(1)} per run`);
 }
 console.log(`full-bag bonuses per run: ${avg((r) => r.bonus).toFixed(2)}`);

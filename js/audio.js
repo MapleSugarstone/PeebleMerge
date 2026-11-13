@@ -250,7 +250,7 @@ function chime(f, at = 0, vol = 0.06, dur = 0.7) {
   voice({ w: 'sine', f: [f, f * 1.001], dur, vol, at, a: 0.02, fm: [2, 0.35, 0] });
 }
 
-export const SFX = ['place', 'merge', 'select', 'deselect', 'toolOn', 'toolOff', 'smash', 'rewind', 'blueprint', 'swap', 'seed', 'levelUp', 'max', 'over', 'best', 'newRun'];
+export const SFX = ['place', 'merge', 'select', 'deselect', 'toolOn', 'toolOff', 'smash', 'rewind', 'blueprint', 'swap', 'scoot', 'spin', 'luxury', 'scorch', 'bloom', 'seed', 'levelUp', 'max', 'over', 'best', 'newRun'];
 
 /** Plays a named effect. `level` is the block level for place, merge, and seed, and the rarity index for levelUp. */
 export function sfx(name, level = 1) {
@@ -298,6 +298,29 @@ export function sfx(name, level = 1) {
     case 'swap':
       voice({ w: 'sine', f: [note(6), note(9)], dur: 0.3, vol: 0.04, a: 0.04 });
       voice({ w: 'sine', f: [note(9), note(6)], dur: 0.3, vol: 0.035, a: 0.04 });
+      break;
+    // A short soft slide.
+    case 'scoot':
+      voice({ w: 'sine', f: [note(5), note(6)], dur: 0.16, vol: 0.04, a: 0.03 });
+      break;
+    // Four notes turning around the scale.
+    case 'spin':
+      [5, 7, 6, 8].forEach((lv, i) => chime(note(lv), i * 0.06, 0.028, 0.3));
+      break;
+    // A bright rising pair with a held shimmer.
+    case 'luxury':
+      chime(note(9), 0, 0.04, 0.4);
+      chime(note(11), 0.1, 0.04, 0.8);
+      voice({ w: 'sine', f: [note(13)], dur: 0.9, vol: 0.012, at: 0.15, a: 0.2 });
+      break;
+    // A low soft rush of air.
+    case 'scorch':
+      voice({ w: 'noise', f: [500, 1400, 600], dur: 0.6, vol: 0.05, a: 0.15, q: 0.8 });
+      voice({ w: 'sine', f: [120, 80], dur: 0.4, vol: 0.06, a: 0.03 });
+      break;
+    // Three bells opening upward.
+    case 'bloom':
+      [note(7), note(9), note(11)].forEach((f, i) => chime(f, i * 0.12, 0.045, 0.7));
       break;
     // A slow rise, then one bell.
     case 'seed':

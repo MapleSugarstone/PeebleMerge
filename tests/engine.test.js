@@ -136,7 +136,7 @@ test('hammer destroys a block, spends one, and clears rewind history', () => {
   const ev = G.useHammer(s, 0);
   assert.equal(ev.level, 1);
   assert.equal(s.board[0], 0);
-  assert.equal(s.items.hammer, G.CONFIG.startItems.hammer - 1);
+  assert.equal(s.items.hammer, G.MODES.classic.startItems.hammer - 1);
   assert.equal(G.useRewind(s), null);
   assert.equal(G.useHammer(s, 0), null, 'empty tile');
 });
@@ -147,9 +147,9 @@ test('blueprint places the next block on the chosen tile', () => {
   const ev = G.useBlueprint(s, 10);
   assert.equal(ev.cell, 10);
   assert.equal(s.board[10], 3);
-  assert.equal(s.items.blueprint, G.CONFIG.startItems.blueprint - 1);
+  assert.equal(s.items.blueprint, G.MODES.classic.startItems.blueprint - 1);
   assert.equal(G.useBlueprint(s, 10), null, 'occupied tile');
-  assert.equal(s.items.blueprint, G.CONFIG.startItems.blueprint - 1);
+  assert.equal(s.items.blueprint, G.MODES.classic.startItems.blueprint - 1);
 });
 
 test('seed places a chosen level 1 to 5 without changing the next block', () => {
@@ -160,7 +160,7 @@ test('seed places a chosen level 1 to 5 without changing the next block', () => 
   assert.equal(s.board[ev.cell], 5);
   assert.equal(s.next, next);
   assert.equal(s.score, G.points(5));
-  assert.equal(s.items.seed, G.CONFIG.startItems.seed - 1);
+  assert.equal(s.items.seed, G.MODES.classic.startItems.seed - 1);
 });
 
 test('items do nothing after the run is over', () => {

@@ -19,7 +19,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=dev">
 </head>
 <body>
 <div id="app">
@@ -33,7 +33,7 @@
       <span class="stat-value small" id="best">0</span>
     </div>
     <button class="icon-btn" id="sound-btn" aria-label="Sound on">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path class="sound-waves" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path class="sound-off" d="M16 9.5l5 5M21 9.5l-5 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.3 9.5h3.5l4.5-4v13l-4.5-4H3.3z" fill="currentColor"/><path class="sound-waves" d="M14.8 9a4 4 0 0 1 0 6M17.3 6.5a7.5 7.5 0 0 1 0 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/><path class="sound-off" d="M15.3 9.5l5 5M20.3 9.5l-5 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
     </button>
     <button class="icon-btn" id="menu-btn" aria-label="Menu">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"/></svg>
@@ -52,29 +52,8 @@
   </div>
 
   <div class="tool-area">
-  <div class="seed-picker" id="seed-picker" hidden></div>
-  <div class="tools" id="tools">
-    <button class="tool" data-tool="hammer" title="Destroy a block">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h9l2 2-2 2H5z" fill="currentColor"/><path d="M9 8v12" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
-      <span class="tool-name">Hammer</span><span class="badge" data-count="hammer">0</span>
-    </button>
-    <button class="tool" data-tool="rewind" title="Undo the last placement or merge">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6 4 11l5 5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 11H14a5 5 0 0 1 0 10h-3" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
-      <span class="tool-name">Rewind</span><span class="badge" data-count="rewind">0</span>
-    </button>
-    <button class="tool" data-tool="blueprint" title="Place the next block on a tile you pick">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><path d="M3.5 12h17M12 3.5v17" stroke="currentColor" stroke-width="1.4"/><circle cx="16.5" cy="16.5" r="2.6" fill="currentColor"/></svg>
-      <span class="tool-name">Blueprint</span><span class="badge" data-count="blueprint">0</span>
-    </button>
-    <button class="tool" data-tool="swap" title="Trade the places of two tiles">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span class="tool-name">Swap</span><span class="badge" data-count="swap">0</span>
-    </button>
-    <button class="tool" data-tool="seed" title="Place a level 1 to 5 block">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21v-8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M12 13c0-4 3-7 7-7 0 4-3 7-7 7zM12 15c0-3-2.5-5.5-6-5.5 0 3 2.5 5.5 6 5.5z" fill="currentColor"/></svg>
-      <span class="tool-name">Seed</span><span class="badge" data-count="seed">0</span>
-    </button>
-  </div>
+  <div class="picker" id="picker" hidden></div>
+  <div class="tools" id="tools"></div>
   </div>
 
   <button class="place-btn" id="place-btn">
@@ -87,6 +66,6 @@
   <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
 </div>
 
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/main.js?v=dev"></script>
 </body>
 </html>
