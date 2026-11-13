@@ -854,6 +854,8 @@ document.addEventListener('pointerdown', wake, { capture: true, passive: true })
 document.addEventListener('visibilitychange', syncMusic);
 
 document.addEventListener('contextmenu', (e) => e.preventDefault());
+// Some desktop and older mobile browsers still zoom or select on a double click.
+document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!overlay.hidden && overlay.dataset.dismiss === '1') closeSheet();
