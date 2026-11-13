@@ -391,15 +391,24 @@ function turn(ring, dir, ms = 420, fromDeg = null) {
   }
 }
 
+/** Swells a block that just went up a level, with a soft glow, then settles it. */
+function grow(cell, delay) {
+  const el = cells[cell].firstChild;
+  const pts = G.points(state.board[cell]);
+  setTimeout(() => floatPoints(cell, pts), delay);
+  if (!el || reduceMotion.matches) return;
+  const rest = { transform: 'scale(1)', filter: 'brightness(1) drop-shadow(0 0 0 rgba(255, 255, 255, 0))' };
+  const peak = { transform: 'scale(1.22)', filter: 'brightness(1.18) drop-shadow(0 0 10px rgba(255, 255, 255, 0.95))', offset: 0.4 };
+  raise(el, el.animate([rest, peak, rest], { duration: 480, delay, easing: 'ease-out', fill: 'backwards' }));
+}
+
 function animate(ev) {
   const pop = (i, cls = 'pop') => cells[i].firstChild?.classList.add(cls);
   if (ev.type === 'swap') { pop(ev.a); pop(ev.b); return; }
   if (ev.type === 'scoot') { if (!ev.dragged) slide(ev.b, ev.a); return; }
   if (ev.type === 'spin') { turn(ev.cells, ev.dir, 420, ev.fromDeg); return; }
-  if (ev.type === 'bloom') {
-    ev.cells.forEach((i) => { pop(i, 'merge-pop'); floatPoints(i, G.points(state.board[i])); });
-    return;
-  }
+  // The three tiles grow one after another, in time with Bloom's three rising bells.
+  if (ev.type === 'bloom') { ev.cells.forEach((i, k) => grow(i, k * 120)); return; }
   if (ev.type === 'hammer' || ev.type === 'scorch') {
     const list = ev.type === 'hammer' ? [[ev.cell, ev.level]] : ev.cells.map((c, k) => [c, ev.levels[k]]);
     for (const [cell, level] of list) {
