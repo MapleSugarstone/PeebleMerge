@@ -21,7 +21,8 @@ test('space starts with its own items and drops only them', () => {
     const d = G.rollDrop(space([], {}));
     counts[d.item] = (counts[d.item] || 0) + 1;
   }
-  assert.ok(counts.shuffle > counts.teleport && counts.teleport > counts.beam && counts.beam > counts.gravity && counts.gravity > counts.monolith);
+  assert.ok(counts.shuffle > counts.beam && counts.beam > counts.teleport && counts.teleport > counts.gravity && counts.gravity > counts.monolith);
+  assert.equal(G.capOf('teleport', 'space'), 3);
 });
 
 test('shuffle keeps every block and moves at least one', () => {

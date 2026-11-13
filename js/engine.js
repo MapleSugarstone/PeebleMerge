@@ -46,8 +46,8 @@ export const MODES = {
     startItems: { shuffle: 2, teleport: 2, beam: 2, gravity: 1, monolith: 0 },
     drops: [
       { item: 'shuffle', rarity: 0, weight: 40, cap: 5 },
-      { item: 'teleport', rarity: 1, weight: 26, cap: 5 },
-      { item: 'beam', rarity: 1, weight: 18, cap: 4 },
+      { item: 'beam', rarity: 1, weight: 26, cap: 4 },
+      { item: 'teleport', rarity: 1, weight: 18, cap: 3 },
       { item: 'gravity', rarity: 2, weight: 11, cap: 3 },
       { item: 'monolith', rarity: 3, weight: 5, cap: 1 },
     ],
