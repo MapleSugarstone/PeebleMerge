@@ -80,7 +80,7 @@ test('gravity slides without merging when nothing matches, and refuses when noth
   assert.equal(s.items.gravity, 1);
 });
 
-test('monolith lifts half the blocks for two moves, then drops them back', () => {
+test('monolith lifts half the blocks for three moves, then drops them back', () => {
   const s = space([1, 2, 3, 4, _, _, _, _, _, _, _, _, _, _, _, _], { monolith: 1 });
   s.next = 1;
   const before = s.board.slice(0, 4);
@@ -88,10 +88,13 @@ test('monolith lifts half the blocks for two moves, then drops them back', () =>
   assert.equal(ev.cells.length, 2);
   const lifted = ev.cells.map((c) => s.board[c] - before[c]);
   assert.ok(lifted.every((d) => d === 1 || d === 2));
-  assert.equal(s.monolith, 2);
+  assert.equal(G.CONFIG.monolithMoves, 3);
+  assert.equal(s.monolith, 3);
   assert.equal(G.useMonolith(s), null, 'one at a time');
   G.place(s, () => 0.99);
+  G.place(s, () => 0.99);
   assert.equal(s.monolith, 1);
+  assert.notDeepEqual(s.board.slice(0, 4), before, 'still lifted after two moves');
   const ev2 = G.place(s, () => 0.99);
   assert.equal(s.monolith, 0);
   assert.deepEqual(ev2.reverted.sort(), ev.cells.slice().sort());

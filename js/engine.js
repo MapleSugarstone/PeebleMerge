@@ -12,7 +12,7 @@ export const CONFIG = {
   luxuryPlacements: 3,
   bloomCount: 3,
   // Monolith lifts last for this many placements and merges.
-  monolithMoves: 2,
+  monolithMoves: 3,
   // A merge gives XP equal to the new block's level. Level n needs min(base + step * (n - 1), max) XP.
   xp: { base: 50, step: 22, max: 360 },
   rarities: ['common', 'uncommon', 'rare', 'epic'],
