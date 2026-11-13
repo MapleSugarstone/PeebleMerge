@@ -5,8 +5,8 @@ const S = 'stroke="currentColor" fill="none" stroke-linecap="round" stroke-linej
 
 export const ICONS = {
   hammer: svg(
-    '<rect x="4" y="3.5" width="16" height="6.5" rx="2" fill="currentColor"/>' +
-    '<rect x="10.6" y="6.5" width="2.8" height="14.5" rx="1.4" fill="currentColor"/>'
+    '<rect x="5.5" y="4" width="13" height="5.5" rx="1.8" fill="currentColor"/>' +
+    '<rect x="10.6" y="6" width="2.8" height="14" rx="1.4" fill="currentColor"/>'
   ),
   rewind: svg(
     `<path d="M9.5 4.5 4.5 9.5l5 5" ${S} stroke-width="2.4"/>` +
