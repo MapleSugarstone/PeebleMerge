@@ -562,6 +562,9 @@ button:disabled { cursor: default; }
 .mode-icon { width: 34px; height: 34px; border-radius: 9px; background: #ffffff; display: grid; place-items: center; border-bottom: 3px solid var(--rc); }
 .mode-icon svg { width: 20px; height: 20px; }
 .mode-best { font-size: 13px; font-weight: 600; opacity: 0.75; }
+.mode-status { font-size: 15px; font-weight: 800; }
+.mode-card.current { box-shadow: 0 0 0 3px #ffffff, 0 0 0 6px var(--accent); }
+.modes { margin-bottom: 18px; }
 
 /* Overlay */
 

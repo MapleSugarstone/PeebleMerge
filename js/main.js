@@ -79,10 +79,47 @@ const modeStats = () => stats.modes[state.mode];
 
 const themePrefs = load(THEME_KEY) || { classic: load('peeble.theme.v1') || MODE_INFO.classic.theme };
 
-let state = load(RUN_KEY);
-const firstVisit = !G.isValidState(state);
+// Each mode keeps its own run, so switching modes never loses progress.
+const RUNS_KEY = 'peeble.runs.v1';
+const CURRENT_KEY = 'peeble.mode.v1';
+const runs = load(RUNS_KEY) || {};
+const oldRun = load(RUN_KEY);
+if (G.isValidState(oldRun)) {
+  G.migrate(oldRun);
+  runs[oldRun.mode] ||= oldRun;
+}
+for (const m of Object.keys(runs)) if (!G.MODES[m] || !G.isValidState(runs[m])) delete runs[m];
+for (const r of Object.values(runs)) G.migrate(r);
+const savedMode = load(CURRENT_KEY);
+let state = runs[savedMode] || (oldRun && runs[oldRun.mode]) || Object.values(runs)[0] || null;
+const firstVisit = !state;
 if (firstVisit) state = G.newGame();
-G.migrate(state);
+
+function saveRun() {
+  runs[state.mode] = state;
+  store(RUNS_KEY, runs);
+  store(CURRENT_KEY, state.mode);
+  try { localStorage.removeItem(RUN_KEY); } catch { /* storage unavailable */ }
+}
+
+const inProgress = (id) => runs[id] && !runs[id].over;
+
+/** Continues a mode's saved run, or starts a new one there when it has none in progress. */
+function chooseMode(id) {
+  if (id === state.mode && !state.over && runs[id] === state) { closeSheet(); return; }
+  if (id !== state.mode && inProgress(id)) {
+    saveRun();
+    state = runs[id];
+    selected = null;
+    applyMode();
+    saveRun();
+    closeSheet();
+    render();
+    sfx('toolOn');
+    return;
+  }
+  newRun(id);
+}
 
 let mode = null;        // the item being aimed, or null
 let pick = null;        // the first tile picked for Swap or Scoot
@@ -456,7 +493,7 @@ function act(ev, via = null) {
     store(STATS_KEY, stats);
   }
   if (ev.type === 'merge' && navigator.vibrate) navigator.vibrate(12);
-  store(RUN_KEY, state);
+  saveRun();
   render(ev);
   if (ev.levelUp) showLevelUp(ev.levelUp);
   if (state.over) finishRun();
@@ -500,7 +537,7 @@ function finishRun() {
     ms.runs++;
     state.recorded = true;
     store(STATS_KEY, stats);
-    store(RUN_KEY, state);
+    saveRun();
     sfx(isBest ? 'best' : 'over');
   }
   render();
@@ -511,7 +548,7 @@ function newRun(modeId) {
   state = G.newGame(Math.random, modeId);
   selected = null;
   applyMode();
-  store(RUN_KEY, state);
+  saveRun();
   closeSheet();
   render();
   sfx('newRun');
@@ -909,7 +946,7 @@ overlay.addEventListener('click', (e) => {
   const a = btn.dataset.action;
   if (a === 'close') closeSheet();
   else if (a === 'new') showModePicker(true);
-  else if (a === 'start') newRun(btn.dataset.mode);
+  else if (a === 'mode') chooseMode(btn.dataset.mode);
   else if (a === 'confirm-end') showConfirmEnd();
   else if (a === 'theme') {
     setTheme(btn.dataset.theme);
@@ -917,25 +954,39 @@ overlay.addEventListener('click', (e) => {
     for (const b of sheet.querySelectorAll('.theme-btn')) b.classList.toggle('active', b === btn);
     sfx('select');
   }
-  else if (a === 'end') { closeSheet(); G.endRun(state); store(RUN_KEY, state); finishRun(); }
+  else if (a === 'end') { closeSheet(); G.endRun(state); saveRun(); finishRun(); }
 });
 
 function tileHtml(level) {
   return `<span class="next-tile" style="display:inline-block;width:40px;height:40px">${blockEl(level).outerHTML}</span>`;
 }
 
-function showModePicker(dismissable) {
-  const cards = Object.entries(MODE_INFO).map(([id, info]) => {
+/** One card per mode, saying what tapping it does: keep playing, continue a saved run, or start a new one. */
+function modeCards() {
+  return Object.entries(MODE_INFO).map(([id, info]) => {
     const icons = G.MODES[id].drops.map((d) => `<span class="mode-icon" data-rarity="${d.rarity}" title="${ITEMS[d.item].name}">${ICONS[d.item]}</span>`).join('');
     const best = stats.modes[id].bestScore;
-    return `<button class="mode-card" data-action="start" data-mode="${id}">
+    const here = id === state.mode && !firstShow;
+    const status = here && !state.over ? 'Playing'
+      : inProgress(id) && !here ? `Continue · ${fmt(runs[id].score)}`
+      : 'New run';
+    return `<button class="mode-card${here && !state.over ? ' current' : ''}" data-action="mode" data-mode="${id}">
       <span class="mode-name">${info.name}</span>
       <span class="mode-icons">${icons}</span>
+      <span class="mode-status">${status}</span>
       <span class="mode-best">${best ? `Best ${fmt(best)}` : '&nbsp;'}</span>
     </button>`;
   }).join('');
+}
+
+let firstShow = false;
+
+function showModePicker(dismissable) {
+  firstShow = !dismissable;
+  const cards = modeCards();
+  firstShow = false;
   openSheet(`
-    <h2>New run</h2>
+    <h2>${dismissable ? 'Pick a mode' : 'New run'}</h2>
     <div class="modes">${cards}</div>
     ${dismissable ? '<div class="sheet-actions"><button class="btn" data-action="close">Back</button></div>' : ''}`, dismissable);
 }
@@ -970,6 +1021,8 @@ function showMenu() {
   const drops = G.MODES[state.mode].drops;
   const ms = modeStats();
   openSheet(`
+    <h2>Mode</h2>
+    <div class="modes">${modeCards()}</div>
     <h2>Sound</h2>
     <div class="volumes">${volumeRow('music', 'Music')}${volumeRow('sfx', 'Effects')}</div>
     <h2>Blocks</h2>
