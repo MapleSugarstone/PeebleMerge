@@ -388,7 +388,7 @@ export function rescueItems(s) {
   if (it.dance > 0 && findHelpfulDance(s)) out.push('dance');
   if (it.kiss > 0 && canKiss(s)) out.push('kiss');
   if (it.longDistance > 0 && hasPair(s)) out.push('longDistance');
-  if (it.jewelry > 0 && canJewelry(s)) out.push('jewelry');
+  if (it.jewelry > 0 && jewelryHelps(s)) out.push('jewelry');
   if (it.love > 0 && hasPair(s)) out.push('love');
   return out;
 }
@@ -857,26 +857,26 @@ export function useLongDistance(s, from, to) {
   return { type: 'longDistance', from, cell: to, level, points: gained };
 }
 
-/** True when the block on `cell` can be destroyed and another block can still be raised afterward. */
-export function canJewelryDestroy(s, cell) {
-  return s.board[cell] > 0 && bloomCells(s).some((i) => i !== cell);
+/** The board after Jewelry raises every level 1 and level 2 block. */
+function jeweled(board) {
+  return board.map((v) => (v === 1 || v === 2 ? v + 1 : v));
 }
 
-function canJewelry(s) {
-  return s.board.some((v, i) => canJewelryDestroy(s, i));
+/** True when Jewelry would leave a merge on the board. */
+function jewelryHelps(s) {
+  return scorchCells(s).length > 0 && hasMerge({ ...s, board: jeweled(s.board) });
 }
 
-/** Destroys one block, then raises a different block one level. */
-export function useJewelry(s, destroy, upgrade) {
-  const lv = s.board[upgrade];
-  if (s.over || !(s.items.jewelry > 0) || destroy === upgrade || !s.board[destroy] || !lv || lv >= CONFIG.maxLevel) return null;
+/** Raises every level 1 and level 2 block by one level. */
+export function useJewelry(s) {
+  const cells = scorchCells(s);
+  if (s.over || !(s.items.jewelry > 0) || !cells.length) return null;
   snapshot(s);
-  const destroyed = s.board[destroy];
-  clearTile(s, destroy);
-  const gained = addBlock(s, upgrade, lv + 1);
+  let gained = 0;
+  for (const i of cells) gained += addBlock(s, i, s.board[i] + 1);
   s.items.jewelry--;
   checkOver(s);
-  return { type: 'jewelry', destroy, destroyed, cell: upgrade, level: lv + 1, points: gained };
+  return { type: 'jewelry', cells, points: gained };
 }
 
 /** Merges every pair of matching blocks once, then rearranges every tile at random. A third matching block stays as it is. */

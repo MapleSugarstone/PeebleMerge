@@ -68,11 +68,7 @@ function playRun(rng) {
       if (G.useLove(s, rng)) { use('love'); continue; }
       const kisser = s.board.findIndex((v, i) => v && G.kissTargets(s, i).length);
       if (s.items.kiss > 0 && kisser >= 0 && G.useKiss(s, kisser, G.kissTargets(s, kisser)[0])) { use('kiss'); continue; }
-      if (s.items.jewelry > 0) {
-        const d = s.board.findIndex((v, i) => G.canJewelryDestroy(s, i));
-        const u = s.board.findIndex((v, i) => i !== d && v && v < G.CONFIG.maxLevel);
-        if (d >= 0 && u >= 0 && G.useJewelry(s, d, u)) { use('jewelry'); continue; }
-      }
+      if (G.useJewelry(s)) { use('jewelry'); continue; }
     }
     if (s.items.gravity > 0 && G.emptyCells(s).length < 4 && G.useGravity(s, 'up')) { use('gravity'); continue; }
     if (s.items.luxury > 0 && G.useLuxury(s)) use('luxury');

@@ -79,17 +79,16 @@ test('long distance merges matching blocks that do not touch', () => {
   assert.equal(s.items.longDistance, 1);
 });
 
-test('jewelry destroys one block and raises another', () => {
-  const s = val([5, 2, _, 14, _, _, _, _, _, _, _, _, _, _, _, _], { jewelry: 1 });
-  assert.equal(G.useJewelry(s, 0, 0), null, 'two different blocks');
-  assert.equal(G.useJewelry(s, 0, 3), null, 'max level cannot rise');
-  assert.equal(G.canJewelryDestroy(s, 0), true);
-  const ev = G.useJewelry(s, 1, 0);
-  assert.deepEqual(s.board.slice(0, 4), [6, 0, 0, 14]);
-  assert.equal(ev.destroyed, 2);
-  assert.equal(s.items.jewelry, 0);
-  const t = val([5, 14, _, _, _, _, _, _, _, _, _, _, _, _, _, _], { jewelry: 1 });
-  assert.equal(G.canJewelryDestroy(t, 0), false, 'nothing left to raise');
+test('jewelry raises every level 1 and level 2 block once', () => {
+  const s = val([1, 2, 3, 1, 2, _, _, _, _, _, _, _, _, _, _, 14], { jewelry: 2 });
+  const ev = G.useJewelry(s);
+  assert.deepEqual(s.board.slice(0, 5), [2, 3, 3, 2, 3], 'a 1 that becomes a 2 does not rise again');
+  assert.equal(s.board[15], 14);
+  assert.deepEqual(ev.cells, [0, 1, 3, 4]);
+  assert.equal(ev.points, 2 * G.points(2) + 2 * G.points(3));
+  assert.equal(s.xp, 0, 'items give no XP');
+  assert.equal(s.items.jewelry, 1);
+  assert.equal(G.useJewelry(val([3, 4, 14], { jewelry: 1 })), null, 'no level 1 or 2 block');
 });
 
 test('love merges each pair once and then rearranges the board', () => {
@@ -104,9 +103,12 @@ test('love merges each pair once and then rearranges the board', () => {
 });
 
 test('a stuck valentines board stays alive while any of its items can help', () => {
-  for (const item of ['dance', 'kiss', 'longDistance', 'jewelry', 'love']) {
+  for (const item of ['dance', 'kiss', 'longDistance', 'love']) {
     assert.deepEqual(G.rescueItems(val(checker, { [item]: 1 })), [item]);
   }
+  // Raising 1s and 2s together keeps a checkerboard of them stuck. A 2 next to a 3 becomes a pair.
+  assert.deepEqual(G.rescueItems(val(checker, { jewelry: 1 })), []);
+  assert.deepEqual(G.rescueItems(val([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 4, 5, 6, 7], { jewelry: 1 })), ['jewelry']);
   assert.equal(G.rescueItems(val([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 14, 14], { longDistance: 1, love: 1 })).length, 0, 'no pair below the max');
 });
 
@@ -118,18 +120,12 @@ function rescue(s) {
     || (from >= 0 && G.useKiss(s, from, G.kissTargets(s, from)[0]))
     || G.useLove(s)
     || longDistance(s)
-    || jewelry(s);
+    || G.useJewelry(s);
 }
 
 function longDistance(s) {
   for (let a = 0; a < 16; a++) for (let b = 0; b < 16; b++) if (G.canLongMerge(s, a, b)) return G.useLongDistance(s, a, b);
   return null;
-}
-
-function jewelry(s) {
-  const d = s.board.findIndex((v, i) => G.canJewelryDestroy(s, i));
-  const u = s.board.findIndex((v, i) => i !== d && v && v < G.CONFIG.maxLevel);
-  return d >= 0 && u >= 0 ? G.useJewelry(s, d, u) : null;
 }
 
 test('a greedy bot plays valentines runs to the end', () => {

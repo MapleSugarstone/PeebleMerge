@@ -48,7 +48,7 @@ const ITEMS = {
   dance: { name: 'Dance', use: 'pair', tip: 'Swap a block with a tile next to it', rule: 'Dance swaps a block with a tile next to it.' },
   kiss: { name: 'Kiss', use: 'pair', tip: 'Fly a block toward another block in its row or column', rule: 'Kiss flies a block toward another block in its row or column and breaks at most one block on the way.' },
   longDistance: { name: 'Long Distance', use: 'pair', tip: 'Merge two matching blocks anywhere on the board', rule: 'Long Distance merges two matching blocks anywhere on the board.' },
-  jewelry: { name: 'Jewelry', use: 'pair', tip: 'Destroy a block, then raise another block one level', rule: 'Jewelry destroys a block, then raises another block one level.' },
+  jewelry: { name: 'Jewelry', use: 'now', tip: 'Raise every level 1 and 2 block by one level', rule: 'Jewelry raises every level 1 and level 2 block by one level.' },
   love: { name: 'Love', use: 'now', tip: 'Merge every matching pair, then shuffle the board', rule: 'Love merges every pair of matching blocks once, then shuffles the board.' },
 };
 const MODE_INFO = {
@@ -359,25 +359,24 @@ function usable() {
     dance: has('dance') && state.board.some((v, i) => G.danceTargets(state, i).length),
     kiss: has('kiss') && G.canKiss(state),
     longDistance: has('longDistance') && state.board.some((v, i) => G.longTargets(state, i).length),
-    jewelry: has('jewelry') && state.board.some((v, i) => G.canJewelryDestroy(state, i)),
+    jewelry: has('jewelry') && state.board.some((v) => v === 1 || v === 2),
     love: has('love') && state.board.some((v, i) => v < G.CONFIG.maxLevel && G.longTargets(state, i).length + G.mergeTargets(state, i).length),
   };
 }
 
-const PAIR_ITEMS = ['dance', 'kiss', 'longDistance', 'jewelry'];
+const PAIR_ITEMS = ['dance', 'kiss', 'longDistance'];
 
 /** The tiles a two-tap Valentines item can finish on after the block on `from`. Long Distance also takes plain merges. */
 function pairTargets(kind, from) {
   if (kind === 'dance') return G.danceTargets(state, from);
   if (kind === 'kiss') return G.kissTargets(state, from);
   if (kind === 'longDistance') return [...G.longTargets(state, from), ...G.mergeTargets(state, from)];
-  if (kind === 'jewelry') return state.board.flatMap((v, j) => (j !== from && v && v < G.CONFIG.maxLevel ? [j] : []));
   return [];
 }
 
 /** True when the block on `i` can start a two-tap Valentines item. */
 function pairStarts(kind, i) {
-  return kind === 'jewelry' ? G.canJewelryDestroy(state, i) : pairTargets(kind, i).length > 0;
+  return pairTargets(kind, i).length > 0;
 }
 
 /** Uses a two-tap Valentines item from one tile to another. */
@@ -385,7 +384,6 @@ function pairAct(kind, from, to) {
   if (kind === 'dance') return G.useDance(state, from, to);
   if (kind === 'kiss') return G.useKiss(state, from, to);
   if (kind === 'longDistance') return G.canMerge(state, from, to) ? G.merge(state, from, to) : G.useLongDistance(state, from, to);
-  if (kind === 'jewelry') return G.useJewelry(state, from, to);
   return null;
 }
 
@@ -397,7 +395,7 @@ function render(ev = null) {
   const ring = spinCorner !== null ? G.spinRing(spinCorner) : [];
   const pairItem = PAIR_ITEMS.includes(mode);
   const pairTo = pairItem && pick !== null ? pairTargets(mode, pick) : [];
-  const pairClass = { dance: 'swap-target', kiss: 'target', longDistance: 'target', jewelry: 'jewel-target' }[mode];
+  const pairClass = { dance: 'swap-target', kiss: 'target', longDistance: 'target' }[mode];
   for (let i = 0; i < cellCount; i++) {
     const c = cells[i];
     const lv = state.board[i];
@@ -421,8 +419,7 @@ function render(ev = null) {
     if (ring.includes(i)) c.classList.add('spin-sel');
     if (mode === 'teleport' && pick === null && lv) c.classList.add('swap-target');
     if (mode === 'teleport' && pick !== null && !lv) c.classList.add('can-place');
-    if (pairItem && pick === null && pairStarts(mode, i)) c.classList.add(mode === 'jewelry' ? 'hammer-target' : 'swap-target');
-    if (pairItem && i === pick && mode === 'jewelry') c.classList.add('hammer-target');
+    if (pairItem && pick === null && pairStarts(mode, i)) c.classList.add('swap-target');
     if (pairTo.includes(i)) c.classList.add(lv ? pairClass : 'can-place');
     if (state.lift?.[i] > 0) c.classList.add('lifted');
   }
@@ -644,11 +641,7 @@ function animate(ev) {
     setTimeout(() => { pop(ev.cell, 'merge-pop'); floatPoints(ev.cell, ev.points); }, delay);
     return;
   }
-  if (ev.type === 'jewelry') {
-    smash(ev.destroy, ev.destroyed);
-    grow(ev.cell, 180);
-    return;
-  }
+  if (ev.type === 'jewelry') { ev.cells.forEach((i, k) => grow(i, k * 60)); return; }
   if (ev.cell !== undefined) {
     pop(ev.cell, ev.type === 'merge' ? 'merge-pop' : 'pop');
     if (ev.points) floatPoints(ev.cell, ev.points);
@@ -791,9 +784,9 @@ function act(ev, via = null) {
   playFor(ev, via);
   selected = null;
   const made = ev.type === 'place' || ev.type === 'merge' ? [ev.level]
-    : ev.type === 'bloom' ? ev.cells.map((i) => state.board[i])
+    : ev.type === 'bloom' || ev.type === 'jewelry' ? ev.cells.map((i) => state.board[i])
     : ev.type === 'gravity' ? ev.frames.flatMap((f) => f.merged.map((c) => f.board[c]))
-    : ev.type === 'longDistance' || ev.type === 'jewelry' ? [ev.level]
+    : ev.type === 'longDistance' ? [ev.level]
     : ev.type === 'love' ? ev.merges.map((m) => m.level)
     : [];
   if (made.length) {
@@ -927,7 +920,7 @@ boardEl.addEventListener('pointermove', (e) => {
     else if (mode === 'beam') startBeamDrag(e.clientX, e.clientY);
     else if (mode === 'scoot' && G.scootTargets(state, press.cell).length) startDrag('scoot');
     else if (mode === 'teleport' && state.board[press.cell]) startDrag('teleport');
-    else if (PAIR_ITEMS.includes(mode) && mode !== 'jewelry' && pairStarts(mode, press.cell)) startDrag(mode);
+    else if (PAIR_ITEMS.includes(mode) && pairStarts(mode, press.cell)) startDrag(mode);
     else if (!mode && state.board[press.cell]) startDrag('merge');
     else return;
   }
@@ -1287,7 +1280,6 @@ function tap(i, x, y) {
     case 'dance':
     case 'kiss':
     case 'longDistance':
-    case 'jewelry':
       if (pick !== null && pairTargets(mode, pick).includes(i)) {
         const from = pick, kind = mode;
         clearAim();
@@ -1354,6 +1346,7 @@ toolsEl.addEventListener('click', (e) => {
     else if (t === 'shuffle') act(G.useShuffle(state));
     else if (t === 'monolith') act(G.useMonolith(state));
     else if (t === 'love') act(G.useLove(state));
+    else if (t === 'jewelry') act(G.useJewelry(state));
     return;
   }
   const on = mode !== t;

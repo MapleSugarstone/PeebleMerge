@@ -363,11 +363,9 @@ export function sfx(name, level = 1) {
     case 'longDistance':
       voice({ w: 'sine', f: [note(4), note(10)], dur: 0.32, vol: 0.035, a: 0.06 });
       break;
-    // A thump, then a bright ring.
+    // A quick run of four high bells.
     case 'jewelry':
-      voice({ w: 'sine', f: [150, 85], dur: 0.2, vol: 0.06, a: 0.012 });
-      chime(note(12), 0.18, 0.04, 0.8);
-      chime(note(14), 0.26, 0.02, 0.8);
+      [10, 12, 11, 13].forEach((lv, i) => chime(note(lv), i * 0.06, 0.03, 0.6));
       break;
     // Warm bells rising, with a held note under them.
     case 'love':

@@ -479,7 +479,7 @@ button:disabled { cursor: default; }
 
 /* Block outlines sit on the block itself and inherit its corner radius, so they trace the tile's exact shape. */
 .cell.selected .block { transform: scale(1.06); }
-.cell.selected .block::after, .cell.target .block::after, .cell.hammer-target .block::after, .cell.swap-target .block::after, .cell.scoot-target .block::after, .cell.jewel-target .block::after {
+.cell.selected .block::after, .cell.target .block::after, .cell.hammer-target .block::after, .cell.swap-target .block::after, .cell.scoot-target .block::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -491,7 +491,6 @@ button:disabled { cursor: default; }
 .cell.hammer-target .block::after { box-shadow: 0 0 0 3px var(--danger); }
 .cell.swap-target .block::after { box-shadow: 0 0 0 3px #9b59d0; }
 .cell.scoot-target .block::after { box-shadow: 0 0 0 4.5px #9b59d0; }
-.cell.jewel-target .block::after { box-shadow: 0 0 0 3.5px #e8b923; }
 .cell.drop-hover .block { transform: scale(1.1); }
 .cell.dragging .block { opacity: 0.35; }
 
