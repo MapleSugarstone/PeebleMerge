@@ -45,11 +45,17 @@ const ITEMS = {
   beam: { name: 'Beam', use: 'drag', tip: 'Drag a row or column to cycle it', rule: 'Beam lets you drag a row or column like tape, and tiles that leave one end come back at the other.' },
   gravity: { name: 'Gravity', use: 'direction', tip: 'Pull every tile one way', rule: 'Gravity pulls every tile one way, and matching tiles merge as they land.' },
   monolith: { name: 'Monolith', use: 'now', tip: `Lift ${G.CONFIG.monolithShare * 100}% of the blocks 1 to ${G.CONFIG.monolithMaxLift} levels for ${G.CONFIG.monolithMoves} moves`, rule: `Monolith lifts ${G.CONFIG.monolithShare * 100}% of the blocks 1 to ${G.CONFIG.monolithMaxLift} levels for your next ${G.CONFIG.monolithMoves} moves, and blocks you merge from them keep their level.` },
+  dance: { name: 'Dance', use: 'pair', tip: 'Swap a block with a tile next to it', rule: 'Dance swaps a block with a tile next to it.' },
+  kiss: { name: 'Kiss', use: 'pair', tip: 'Fly a block toward another block in its row or column', rule: 'Kiss flies a block toward another block in its row or column and breaks at most one block on the way.' },
+  longDistance: { name: 'Long Distance', use: 'pair', tip: 'Merge two matching blocks anywhere on the board', rule: 'Long Distance merges two matching blocks anywhere on the board.' },
+  jewelry: { name: 'Jewelry', use: 'pair', tip: 'Destroy a block, then raise another block one level', rule: 'Jewelry destroys a block, then raises another block one level.' },
+  love: { name: 'Love', use: 'now', tip: 'Merge every matching pair, then shuffle the board', rule: 'Love merges every pair of matching blocks once, then shuffles the board.' },
 };
 const MODE_INFO = {
   classic: { name: 'Classic', color: '#e6f1d8', theme: 'garden' },
   fall: { name: 'Fall', color: '#fbe9d4', theme: 'autumn' },
   space: { name: 'Space', color: '#1b1840', theme: 'space' },
+  valentines: { name: 'Valentines', color: '#ffe6ee', theme: 'valentine' },
   daily: { name: 'Daily', color: '#eef0f6', theme: 'toys' },
 };
 const RARITY_NAMES = ['Common', 'Uncommon', 'Rare', 'Epic'];
@@ -63,6 +69,7 @@ const THEMES = [
   { id: 'sweets', name: 'Sweets', icons: 14 },
   { id: 'sea', name: 'Sea', icons: 14 },
   { id: 'space', name: 'Space', icons: 14 },
+  { id: 'valentine', name: 'Valentine', icons: 14 },
   // The toy set belongs to Daily alone.
   { id: 'toys', name: 'Toys', icons: 14, only: 'daily' },
   { id: 'numbers', name: 'Numbers', icons: 0 },
@@ -349,7 +356,37 @@ function usable() {
     beam: has('beam') && filled > 0,
     gravity: has('gravity') && ['up', 'down', 'left', 'right'].some((d) => G.canFall(state, d)),
     monolith: has('monolith') && !(state.monolith > 0) && state.board.some((v) => v > 0 && v < G.CONFIG.maxLevel),
+    dance: has('dance') && state.board.some((v, i) => G.danceTargets(state, i).length),
+    kiss: has('kiss') && G.canKiss(state),
+    longDistance: has('longDistance') && state.board.some((v, i) => G.longTargets(state, i).length),
+    jewelry: has('jewelry') && state.board.some((v, i) => G.canJewelryDestroy(state, i)),
+    love: has('love') && state.board.some((v, i) => v < G.CONFIG.maxLevel && G.longTargets(state, i).length + G.mergeTargets(state, i).length),
   };
+}
+
+const PAIR_ITEMS = ['dance', 'kiss', 'longDistance', 'jewelry'];
+
+/** The tiles a two-tap Valentines item can finish on after the block on `from`. Long Distance also takes plain merges. */
+function pairTargets(kind, from) {
+  if (kind === 'dance') return G.danceTargets(state, from);
+  if (kind === 'kiss') return G.kissTargets(state, from);
+  if (kind === 'longDistance') return [...G.longTargets(state, from), ...G.mergeTargets(state, from)];
+  if (kind === 'jewelry') return state.board.flatMap((v, j) => (j !== from && v && v < G.CONFIG.maxLevel ? [j] : []));
+  return [];
+}
+
+/** True when the block on `i` can start a two-tap Valentines item. */
+function pairStarts(kind, i) {
+  return kind === 'jewelry' ? G.canJewelryDestroy(state, i) : pairTargets(kind, i).length > 0;
+}
+
+/** Uses a two-tap Valentines item from one tile to another. */
+function pairAct(kind, from, to) {
+  if (kind === 'dance') return G.useDance(state, from, to);
+  if (kind === 'kiss') return G.useKiss(state, from, to);
+  if (kind === 'longDistance') return G.canMerge(state, from, to) ? G.merge(state, from, to) : G.useLongDistance(state, from, to);
+  if (kind === 'jewelry') return G.useJewelry(state, from, to);
+  return null;
 }
 
 function render(ev = null) {
@@ -358,6 +395,9 @@ function render(ev = null) {
   const targets = selected !== null ? G.mergeTargets(state, selected) : [];
   const scootTo = mode === 'scoot' && pick !== null ? G.scootTargets(state, pick) : [];
   const ring = spinCorner !== null ? G.spinRing(spinCorner) : [];
+  const pairItem = PAIR_ITEMS.includes(mode);
+  const pairTo = pairItem && pick !== null ? pairTargets(mode, pick) : [];
+  const pairClass = { dance: 'swap-target', kiss: 'target', longDistance: 'target', jewelry: 'jewel-target' }[mode];
   for (let i = 0; i < cellCount; i++) {
     const c = cells[i];
     const lv = state.board[i];
@@ -381,6 +421,9 @@ function render(ev = null) {
     if (ring.includes(i)) c.classList.add('spin-sel');
     if (mode === 'teleport' && pick === null && lv) c.classList.add('swap-target');
     if (mode === 'teleport' && pick !== null && !lv) c.classList.add('can-place');
+    if (pairItem && pick === null && pairStarts(mode, i)) c.classList.add(mode === 'jewelry' ? 'hammer-target' : 'swap-target');
+    if (pairItem && i === pick && mode === 'jewelry') c.classList.add('hammer-target');
+    if (pairTo.includes(i)) c.classList.add(lv ? pairClass : 'can-place');
     if (state.lift?.[i] > 0) c.classList.add('lifted');
   }
   renderMonolithChip();
@@ -547,6 +590,21 @@ function warp(from, to, level) {
   if (el) raise(el, el.animate([{ transform: 'scale(0.2)', opacity: 0 }, { transform: 'scale(1.12)', opacity: 1, offset: 0.7 }, { transform: 'scale(1)', opacity: 1 }], { duration: 320, delay: 120, easing: 'ease-out', fill: 'backwards' }));
 }
 
+/** Leaves a copy of a destroyed block on its tile that shrinks away. */
+function smash(cell, level) {
+  const ghost = blockEl(level);
+  ghost.classList.add('smash');
+  ghost.addEventListener('animationend', () => ghost.remove());
+  cells[cell].appendChild(ghost);
+}
+
+/** Gives a block a small bounce, as when another block touches it. */
+function bump(cell, delay) {
+  const el = cells[cell].firstChild;
+  if (!el || reduceMotion.matches) return;
+  el.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.12)', offset: 0.4 }, { transform: 'scale(1)' }], { duration: 300, delay, easing: 'ease-out' });
+}
+
 function animate(ev) {
   const pop = (i, cls = 'pop') => cells[i].firstChild?.classList.add(cls);
   if (ev.reverted) ev.reverted.forEach(sink);
@@ -564,12 +622,31 @@ function animate(ev) {
   }
   if (ev.type === 'hammer' || ev.type === 'scorch') {
     const list = ev.type === 'hammer' ? [[ev.cell, ev.level]] : ev.cells.map((c, k) => [c, ev.levels[k]]);
-    for (const [cell, level] of list) {
-      const ghost = blockEl(level);
-      ghost.classList.add('smash');
-      ghost.addEventListener('animationend', () => ghost.remove());
-      cells[cell].appendChild(ghost);
-    }
+    for (const [cell, level] of list) smash(cell, level);
+    return;
+  }
+  if (ev.type === 'dance') {
+    if (ev.dragged) pop(ev.b);
+    else slide(ev.b, ev.a);
+    if (state.board[ev.a]) slide(ev.a, ev.b);
+    return;
+  }
+  if (ev.type === 'kiss') {
+    // A dragged block was let go over its target, so it settles back from there.
+    slide(ev.b, ev.dragged ? ev.target : ev.a, ev.dragged ? 200 : 300);
+    if (ev.broken !== null) smash(ev.broken, ev.brokenLevel);
+    bump(ev.target, ev.dragged ? 0 : 220);
+    return;
+  }
+  if (ev.type === 'longDistance') {
+    const delay = ev.dragged ? 0 : 300;
+    if (!ev.dragged) slide(ev.cell, ev.from, delay);
+    setTimeout(() => { pop(ev.cell, 'merge-pop'); floatPoints(ev.cell, ev.points); }, delay);
+    return;
+  }
+  if (ev.type === 'jewelry') {
+    smash(ev.destroy, ev.destroyed);
+    grow(ev.cell, 180);
     return;
   }
   if (ev.cell !== undefined) {
@@ -592,6 +669,7 @@ function floatPoints(cell, pts) {
 const SOUNDS = {
   hammer: 'smash', rewind: 'rewind', swap: 'swap', scoot: 'scoot', spin: 'spin', luxury: 'luxury', scorch: 'scorch', bloom: 'bloom',
   shuffle: 'shuffle', teleport: 'teleport', beam: 'beam', gravity: 'gravity', monolith: 'monolith',
+  dance: 'dance', kiss: 'kiss', longDistance: 'longDistance', jewelry: 'jewelry', love: 'love',
 };
 
 function playFor(ev, via) {
@@ -599,6 +677,7 @@ function playFor(ev, via) {
   else if (ev.type === 'merge') sfx(ev.level >= G.CONFIG.maxLevel ? 'max' : 'merge', ev.level);
   else if (SOUNDS[ev.type]) sfx(SOUNDS[ev.type]);
   if (via === 'blueprint' || via === 'seed') sfx(via);
+  if (ev.type === 'longDistance') setTimeout(() => sfx('merge', ev.level), ev.dragged ? 0 : 280);
   if (ev.reverted) setTimeout(() => sfx('revert'), 200);
 }
 
@@ -641,6 +720,72 @@ async function playGravity(ev) {
   }
 }
 
+/** The middle of the board, in the same coordinates as a tile's offsetLeft and offsetTop. */
+function boardCenter() {
+  const a = cells[0], b = cells[cellCount - 1];
+  return [(a.offsetLeft + b.offsetLeft + b.offsetWidth) / 2, (a.offsetTop + b.offsetTop + b.offsetHeight) / 2];
+}
+
+const SWIRL_DEG = 300;
+
+/** Keyframes that spiral a block from its tile into the middle of the board, or from the middle out to its tile. */
+function swirlFrames(cell, inward) {
+  const [cx, cy] = boardCenter();
+  const c = cells[cell];
+  const vx = c.offsetLeft + c.offsetWidth / 2 - cx, vy = c.offsetTop + c.offsetHeight / 2 - cy;
+  const STEPS = 18;
+  return Array.from({ length: STEPS + 1 }, (_, k) => {
+    const t = k / STEPS;
+    const r = inward ? 1 - t : t;
+    // The way out continues the way in's turn, so every block keeps circling clockwise.
+    const a = ((inward ? t : t - 1) * SWIRL_DEG * Math.PI) / 180;
+    const x = (vx * Math.cos(a) - vy * Math.sin(a)) * r - vx;
+    const y = (vx * Math.sin(a) + vy * Math.cos(a)) * r - vy;
+    return { transform: `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) scale(${(0.4 + 0.6 * r).toFixed(3)})` };
+  });
+}
+
+/** A pink glow with a heart that swells and fades in the middle of the board. */
+function loveBurst() {
+  const [cx, cy] = boardCenter();
+  const el = document.createElement('div');
+  el.className = 'love-burst';
+  el.innerHTML = ICONS.love;
+  el.style.left = cx + 'px';
+  el.style.top = cy + 'px';
+  el.addEventListener('animationend', () => el.remove());
+  wrapEl.appendChild(el);
+}
+
+/** Shows Love: every block swirls into the middle of the board, the pairs merge there, and the blocks swirl out to their new tiles. */
+async function playLove(ev) {
+  const moving = !reduceMotion.matches;
+  if (moving) {
+    const before = ev.merged.slice();
+    for (const m of ev.merges) before[m.from] = before[m.to] = m.level - 1;
+    paintBlocks(before);
+    for (let i = 0; i < cellCount; i++) {
+      const el = before[i] && cells[i].firstChild;
+      if (el) raise(el, el.animate(swirlFrames(i, true), { duration: 560, easing: 'ease-in', fill: 'forwards' }));
+    }
+    await wait(560);
+    loveBurst();
+    await wait(200);
+    cellKeys.fill(null);
+    paintBlocks(state.board);
+    for (let i = 0; i < cellCount; i++) {
+      const el = state.board[i] && cells[i].firstChild;
+      if (el) raise(el, el.animate(swirlFrames(i, false), { duration: 640, easing: 'ease-out' }));
+    }
+    await wait(640);
+  }
+  for (const m of ev.merges) {
+    const cell = ev.moves.find((mv) => mv.from === m.to).to;
+    if (moving) cells[cell].firstChild?.classList.add('merge-pop');
+    floatPoints(cell, G.points(m.level));
+  }
+}
+
 function act(ev, via = null) {
   if (!ev) { render(); return; }
   playFor(ev, via);
@@ -648,6 +793,8 @@ function act(ev, via = null) {
   const made = ev.type === 'place' || ev.type === 'merge' ? [ev.level]
     : ev.type === 'bloom' ? ev.cells.map((i) => state.board[i])
     : ev.type === 'gravity' ? ev.frames.flatMap((f) => f.merged.map((c) => f.board[c]))
+    : ev.type === 'longDistance' || ev.type === 'jewelry' ? [ev.level]
+    : ev.type === 'love' ? ev.merges.map((m) => m.level)
     : [];
   if (made.length) {
     for (const lv of made) if (!stats.seen.includes(lv)) stats.seen.push(lv);
@@ -656,12 +803,12 @@ function act(ev, via = null) {
   }
   if (ev.type === 'merge' && navigator.vibrate) navigator.vibrate(12);
   saveRun();
-  if (ev.type === 'gravity') {
+  if (ev.type === 'gravity' || ev.type === 'love') {
     busy = true;
     render();
-    // render() drew the settled board, so the passes are replayed over it from the start.
+    // render() drew the settled board, so the steps are replayed over it from the start.
     cellKeys.fill(null);
-    playGravity(ev).then(() => {
+    (ev.type === 'gravity' ? playGravity(ev) : playLove(ev)).then(() => {
       busy = false;
       render();
       if (state.over) finishRun();
@@ -780,6 +927,7 @@ boardEl.addEventListener('pointermove', (e) => {
     else if (mode === 'beam') startBeamDrag(e.clientX, e.clientY);
     else if (mode === 'scoot' && G.scootTargets(state, press.cell).length) startDrag('scoot');
     else if (mode === 'teleport' && state.board[press.cell]) startDrag('teleport');
+    else if (PAIR_ITEMS.includes(mode) && mode !== 'jewelry' && pairStarts(mode, press.cell)) startDrag(mode);
     else if (!mode && state.board[press.cell]) startDrag('merge');
     else return;
   }
@@ -797,11 +945,10 @@ boardEl.addEventListener('pointerup', (e) => {
   if (p.dragging && p.kind === 'beam') { endBeam(p.beam); return; }
   if (p.dragging) {
     p.ghost.remove();
-    if (p.kind === 'scoot' || p.kind === 'teleport') {
-      const ok = to !== null && (p.kind === 'scoot' ? G.scootTargets(state, p.cell).includes(to) : !state.board[to]);
-      if (ok) {
+    if (p.kind !== 'merge') {
+      if (dropOk(p.kind, p.cell, to)) {
         clearAim();
-        const ev = p.kind === 'scoot' ? G.useScoot(state, p.cell, to) : G.useTeleport(state, p.cell, to);
+        const ev = p.kind === 'scoot' ? G.useScoot(state, p.cell, to) : p.kind === 'teleport' ? G.useTeleport(state, p.cell, to) : pairAct(p.kind, p.cell, to);
         if (ev) ev.dragged = true;
         act(ev);
       } else {
@@ -836,16 +983,17 @@ boardEl.addEventListener('pointercancel', () => {
   if (press.ghost) press.ghost.remove();
   if (press.spin) { spinLayer.classList.remove('dragging'); poseSpin(press.spin, 0); }
   if (press.beam) dropBeam(press.beam);
+  const dragged = press.kind;
   press = null;
   selected = null;
-  if (mode === 'scoot') pick = null;
+  if (dragged && dragged !== 'merge') pick = null;
   render();
 });
 
 function startDrag(kind) {
   press.dragging = true;
   press.kind = kind;
-  const usesPick = kind === 'scoot' || kind === 'teleport';
+  const usesPick = kind !== 'merge';
   const was = usesPick ? pick : selected;
   if (was !== press.cell) sfx('select');
   if (usesPick) pick = press.cell;
@@ -862,18 +1010,30 @@ function startDrag(kind) {
   press.ghost = g;
 }
 
+/** True when a block dragged from `from` can be let go over `to`. */
+function dropOk(kind, from, to) {
+  if (to === null) return false;
+  if (kind === 'scoot') return G.scootTargets(state, from).includes(to);
+  if (kind === 'teleport') return !state.board[to];
+  if (kind === 'merge') return G.canMerge(state, from, to);
+  return pairTargets(kind, from).includes(to);
+}
+
 function moveGhost(x, y) {
   press.ghost.style.left = x + 'px';
   press.ghost.style.top = y + 'px';
   const over = cellAt(x, y);
-  const ok = over !== null && (press.kind === 'scoot' ? G.scootTargets(state, press.cell).includes(over)
-    : press.kind === 'teleport' ? !state.board[over]
-    : G.canMerge(state, press.cell, over));
-  const hover = ok ? over : null;
+  const hover = dropOk(press.kind, press.cell, over) ? over : null;
   if (hover === press.hover) return;
   if (press.hover !== null) cells[press.hover].classList.remove('drop-hover');
   if (hover !== null) cells[hover].classList.add('drop-hover');
   press.hover = hover;
+  // Kiss marks the block it would break on the way to the hovered target.
+  if (press.kind === 'kiss') {
+    if (press.breaks != null) cells[press.breaks].classList.remove('hammer-target');
+    press.breaks = hover === null ? null : G.kissPath(state.board, press.cell, hover).broken;
+    if (press.breaks !== null) cells[press.breaks].classList.add('hammer-target');
+  }
 }
 
 function startSpinDrag() {
@@ -1124,6 +1284,18 @@ function tap(i, x, y) {
         pickFirst(i, lv > 0);
       }
       return;
+    case 'dance':
+    case 'kiss':
+    case 'longDistance':
+    case 'jewelry':
+      if (pick !== null && pairTargets(mode, pick).includes(i)) {
+        const from = pick, kind = mode;
+        clearAim();
+        act(pairAct(kind, from, i));
+      } else {
+        pickFirst(i, pairStarts(mode, i));
+      }
+      return;
     case 'beam':
     case 'gravity':
       // Beam is dragged and Gravity is swiped or picked with its arrows, so a plain tap does nothing.
@@ -1181,6 +1353,7 @@ toolsEl.addEventListener('click', (e) => {
     else if (t === 'bloom') act(G.useBloom(state));
     else if (t === 'shuffle') act(G.useShuffle(state));
     else if (t === 'monolith') act(G.useMonolith(state));
+    else if (t === 'love') act(G.useLove(state));
     return;
   }
   const on = mode !== t;
@@ -1332,7 +1505,7 @@ function tileHtml(level) {
 
 /** One card per mode, saying what tapping it does: keep playing, continue a saved run, or start a new one. */
 function modeCards() {
-  const today = G.dailyConfig(G.todayKey());
+  const today = inProgress('daily') ? runs.daily.daily : G.dailyConfig(G.todayKey());
   return Object.entries(MODE_INFO).map(([id, info]) => {
     const drops = id === 'daily' ? today.drops : G.MODES[id].drops;
     const icons = drops.map((d) => `<span class="mode-icon" data-rarity="${d.rarity}" title="${ITEMS[d.item].name}">${ICONS[d.item]}</span>`).join('');

@@ -25,7 +25,7 @@ jobs:
           node-version: 24
 
       - name: Run engine tests
-        run: node --test tests/engine.test.js tests/fall.test.js tests/space.test.js tests/daily.test.js
+        run: node --test tests/engine.test.js tests/fall.test.js tests/space.test.js tests/daily.test.js tests/valentines.test.js
 
       # Only the files the page loads go into the site, so tests and tools stay out of it.
       - name: Assemble site

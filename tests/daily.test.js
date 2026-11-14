@@ -79,9 +79,23 @@ test('a daily save that lost its draw falls back to classic', () => {
 
 /** Uses whichever item can free a stuck board. */
 function rescue(s) {
-  const swap = G.findHelpfulSwap(s), spin = G.findHelpfulSpin(s), beam = G.findHelpfulBeam(s);
+  const swap = G.findHelpfulSwap(s), spin = G.findHelpfulSpin(s), beam = G.findHelpfulBeam(s), dance = G.findHelpfulDance(s);
+  const kisser = s.board.findIndex((v, i) => v && G.kissTargets(s, i).length);
   return G.useRewind(s) || G.useHammer(s, 0) || (swap && G.useSwap(s, swap[0], swap[1])) || (spin && G.useSpin(s, spin[0], spin[1]))
-    || G.useScorch(s) || G.useBloom(s) || (beam && G.useBeam(s, beam[0], beam[1], beam[2])) || G.useMonolith(s) || G.useShuffle(s);
+    || G.useScorch(s) || G.useBloom(s) || (beam && G.useBeam(s, beam[0], beam[1], beam[2])) || G.useMonolith(s) || G.useShuffle(s)
+    || (dance && G.useDance(s, dance[0], dance[1])) || (kisser >= 0 && G.useKiss(s, kisser, G.kissTargets(s, kisser)[0]))
+    || G.useLove(s) || longDistance(s) || jewelry(s);
+}
+
+function longDistance(s) {
+  for (let a = 0; a < 16; a++) for (let b = 0; b < 16; b++) if (G.canLongMerge(s, a, b)) return G.useLongDistance(s, a, b);
+  return null;
+}
+
+function jewelry(s) {
+  const d = s.board.findIndex((v, i) => G.canJewelryDestroy(s, i));
+  const u = s.board.findIndex((v, i) => i !== d && v && v < G.CONFIG.maxLevel);
+  return d >= 0 && u >= 0 ? G.useJewelry(s, d, u) : null;
 }
 
 test('a greedy bot plays thirty days of daily runs to the end', () => {

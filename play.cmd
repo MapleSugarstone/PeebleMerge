@@ -23,4 +23,4 @@ if not defined PY (
 echo Peeble Merge: http://localhost:%PORT%/
 echo Close this window to stop the server.
 start "" http://localhost:%PORT%/
-%PY% "tools\serve.py" %PORT%
+%PY% "Notes\tools\serve.py" %PORT%

@@ -55,6 +55,16 @@ export const MODES = {
       { item: 'monolith', rarity: 3, weight: 5, cap: 1 },
     ],
   },
+  valentines: {
+    startItems: { dance: 3, kiss: 2, longDistance: 1, jewelry: 0, love: 0 },
+    drops: [
+      { item: 'dance', rarity: 0, weight: 40, cap: 6 },
+      { item: 'kiss', rarity: 1, weight: 28, cap: 6 },
+      { item: 'longDistance', rarity: 2, weight: 16, cap: 2 },
+      { item: 'jewelry', rarity: 2, weight: 11, cap: 1 },
+      { item: 'love', rarity: 3, weight: 5, cap: 1 },
+    ],
+  },
   // A Daily run carries the day's draw in `state.daily`, so this entry only marks the mode as known.
   daily: { startItems: {}, drops: [] },
 };
@@ -375,6 +385,11 @@ export function rescueItems(s) {
   if (it.shuffle > 0 && hasPair(s)) out.push('shuffle');
   if (it.beam > 0 && findHelpfulBeam(s)) out.push('beam');
   if (it.monolith > 0 && !(s.monolith > 0) && bloomCells(s).length) out.push('monolith');
+  if (it.dance > 0 && findHelpfulDance(s)) out.push('dance');
+  if (it.kiss > 0 && canKiss(s)) out.push('kiss');
+  if (it.longDistance > 0 && hasPair(s)) out.push('longDistance');
+  if (it.jewelry > 0 && canJewelry(s)) out.push('jewelry');
+  if (it.love > 0 && hasPair(s)) out.push('love');
   return out;
 }
 
@@ -549,21 +564,18 @@ function hasPair(s) {
   return false;
 }
 
-/** Rearranges every tile on the board at random. */
-export function useShuffle(s, rng = rngFor(s)) {
-  if (s.over || !(s.items.shuffle > 0) || !s.board.some(Boolean)) return null;
-  let order = null;
-  // A shuffle that lands every block back on its own tile is drawn again.
-  for (let attempt = 0; attempt < 12; attempt++) {
-    const p = Array.from({ length: CELLS }, (_, i) => i);
-    for (let i = CELLS - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1));
-      [p[i], p[j]] = [p[j], p[i]];
-    }
-    if (p.some((to, from) => s.board[from] !== s.board[to])) { order = p; break; }
+/** A random order of every tile: entry `from` is the tile that `from` moves to. */
+function randomOrder(rng) {
+  const p = Array.from({ length: CELLS }, (_, i) => i);
+  for (let i = CELLS - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [p[i], p[j]] = [p[j], p[i]];
   }
-  if (!order) return null;
-  snapshot(s);
+  return p;
+}
+
+/** Moves every tile to the place `order` gives it, and returns the moves of the blocks. */
+function rearrange(s, order) {
   const board = new Array(CELLS).fill(0), lift = new Array(CELLS).fill(0);
   const moves = [];
   order.forEach((to, from) => {
@@ -573,6 +585,21 @@ export function useShuffle(s, rng = rngFor(s)) {
   });
   s.board = board;
   s.lift = lift;
+  return moves;
+}
+
+/** Rearranges every tile on the board at random. */
+export function useShuffle(s, rng = rngFor(s)) {
+  if (s.over || !(s.items.shuffle > 0) || !s.board.some(Boolean)) return null;
+  let order = null;
+  // A shuffle that lands every block back on its own tile is drawn again.
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const p = randomOrder(rng);
+    if (p.some((to, from) => s.board[from] !== s.board[to])) { order = p; break; }
+  }
+  if (!order) return null;
+  snapshot(s);
+  const moves = rearrange(s, order);
   s.items.shuffle--;
   checkOver(s);
   return { type: 'shuffle', moves };
@@ -720,6 +747,160 @@ export function useMonolith(s, rng = rngFor(s)) {
   s.items.monolith--;
   checkOver(s);
   return { type: 'monolith', cells };
+}
+
+// Valentines items.
+
+const adjacent = (a, b) => neighbors(a).includes(b);
+
+/** Trades two tiles that share an edge. The first must hold a block, and the second may be empty. */
+export function useDance(s, a, b) {
+  if (s.over || !(s.items.dance > 0) || !s.board[a] || !adjacent(a, b) || s.board[a] === s.board[b]) return null;
+  snapshot(s);
+  [s.board[a], s.board[b]] = [s.board[b], s.board[a]];
+  [s.lift[a], s.lift[b]] = [s.lift[b], s.lift[a]];
+  s.items.dance--;
+  checkOver(s);
+  return { type: 'dance', a, b };
+}
+
+/** The tiles the block on `from` can dance with. */
+export function danceTargets(s, from) {
+  const lv = s.board[from];
+  return lv ? neighbors(from).filter((j) => s.board[j] !== lv) : [];
+}
+
+/** Two tiles that share an edge whose swap leaves a merge on the board, or null. The first holds a block. */
+export function findHelpfulDance(s) {
+  const b = s.board;
+  for (let i = 0; i < CELLS; i++) {
+    for (const j of neighbors(i)) {
+      if (j < i || b[i] === b[j]) continue;
+      [b[i], b[j]] = [b[j], b[i]];
+      const helps = hasMerge(s);
+      [b[i], b[j]] = [b[j], b[i]];
+      if (helps) return b[i] ? [i, j] : [j, i];
+    }
+  }
+  return null;
+}
+
+/** The tiles strictly between two tiles of one row or column, nearest `from` first, or null when they share neither. */
+function between(from, to) {
+  const n = CONFIG.size;
+  const r1 = Math.floor(from / n), c1 = from % n, r2 = Math.floor(to / n), c2 = to % n;
+  if (from === to || (r1 !== r2 && c1 !== c2)) return null;
+  const step = r1 === r2 ? Math.sign(c2 - c1) : n * Math.sign(r2 - r1);
+  const out = [];
+  for (let i = from + step; i !== to; i += step) out.push(i);
+  return out;
+}
+
+/** Where a block kissing another block stops and the block it breaks on the way, or null when it cannot move. */
+export function kissPath(board, from, to) {
+  const path = board[from] && board[to] ? between(from, to) : null;
+  if (!path) return null;
+  let end = from, broken = null;
+  for (const cell of path) {
+    if (board[cell]) {
+      if (broken !== null) break;
+      broken = cell;
+    }
+    end = cell;
+  }
+  return end === from ? null : { end, broken };
+}
+
+/** The blocks that the block on `from` can kiss. */
+export function kissTargets(s, from) {
+  return Array.from({ length: CELLS }, (_, i) => i).filter((to) => kissPath(s.board, from, to));
+}
+
+export function canKiss(s) {
+  return s.board.some((v, i) => v && kissTargets(s, i).length);
+}
+
+/** Flies a block along its row or column toward another block. It breaks at most one block on the way and stops as close as it gets. */
+export function useKiss(s, from, to) {
+  const k = !s.over && s.items.kiss > 0 ? kissPath(s.board, from, to) : null;
+  if (!k) return null;
+  snapshot(s);
+  const brokenLevel = k.broken === null ? 0 : s.board[k.broken];
+  if (k.broken !== null) clearTile(s, k.broken);
+  moveTile(s, from, k.end);
+  s.items.kiss--;
+  checkOver(s);
+  return { type: 'kiss', a: from, b: k.end, target: to, broken: k.broken, brokenLevel };
+}
+
+/** True when Long Distance can merge these two blocks: they match, sit below the max, and do not share an edge. */
+export function canLongMerge(s, from, to) {
+  const lv = s.board[from];
+  return !s.over && from !== to && lv > 0 && lv < CONFIG.maxLevel && s.board[to] === lv && !adjacent(from, to);
+}
+
+/** The blocks that Long Distance can merge the block on `from` into. */
+export function longTargets(s, from) {
+  return Array.from({ length: CELLS }, (_, i) => i).filter((to) => canLongMerge(s, from, to));
+}
+
+/** Merges two matching blocks from anywhere on the board. The new block lands on `to`. */
+export function useLongDistance(s, from, to) {
+  if (!(s.items.longDistance > 0) || !canLongMerge(s, from, to)) return null;
+  snapshot(s);
+  const level = s.board[to] + 1;
+  clearTile(s, from);
+  s.lift[to] = 0;
+  const gained = addBlock(s, to, level);
+  s.items.longDistance--;
+  checkOver(s);
+  return { type: 'longDistance', from, cell: to, level, points: gained };
+}
+
+/** True when the block on `cell` can be destroyed and another block can still be raised afterward. */
+export function canJewelryDestroy(s, cell) {
+  return s.board[cell] > 0 && bloomCells(s).some((i) => i !== cell);
+}
+
+function canJewelry(s) {
+  return s.board.some((v, i) => canJewelryDestroy(s, i));
+}
+
+/** Destroys one block, then raises a different block one level. */
+export function useJewelry(s, destroy, upgrade) {
+  const lv = s.board[upgrade];
+  if (s.over || !(s.items.jewelry > 0) || destroy === upgrade || !s.board[destroy] || !lv || lv >= CONFIG.maxLevel) return null;
+  snapshot(s);
+  const destroyed = s.board[destroy];
+  clearTile(s, destroy);
+  const gained = addBlock(s, upgrade, lv + 1);
+  s.items.jewelry--;
+  checkOver(s);
+  return { type: 'jewelry', destroy, destroyed, cell: upgrade, level: lv + 1, points: gained };
+}
+
+/** Merges every pair of matching blocks once, then rearranges every tile at random. A third matching block stays as it is. */
+export function useLove(s, rng = rngFor(s)) {
+  if (s.over || !(s.items.love > 0) || !hasPair(s)) return null;
+  const byLevel = new Map();
+  s.board.forEach((v, i) => { if (v > 0 && v < CONFIG.maxLevel) byLevel.set(v, [...(byLevel.get(v) || []), i]); });
+  snapshot(s);
+  const merges = [];
+  let gained = 0;
+  for (const [lv, cells] of byLevel) {
+    for (let k = 0; k + 1 < cells.length; k += 2) {
+      const from = cells[k], to = cells[k + 1];
+      clearTile(s, from);
+      s.lift[to] = 0;
+      gained += addBlock(s, to, lv + 1);
+      merges.push({ from, to, level: lv + 1 });
+    }
+  }
+  const board = s.board.slice();
+  const moves = rearrange(s, randomOrder(rng));
+  s.items.love--;
+  checkOver(s);
+  return { type: 'love', merges, merged: board, moves, points: gained };
 }
 
 export function endRun(s) {

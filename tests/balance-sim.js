@@ -1,5 +1,5 @@
 // Plays many runs with a scripted player and reports how often levels and item drops arrive.
-// Usage: node tests/balance-sim.js [runs] [classic|fall]
+// Usage: node tests/balance-sim.js [runs] [classic|fall|space|valentines]
 import * as G from '../js/engine.js';
 
 const RUNS = Number(process.argv[2] || 300);
@@ -58,6 +58,21 @@ function playRun(rng) {
       if (beam && G.useBeam(s, beam[0], beam[1], beam[2])) { use('beam'); continue; }
       if (G.useMonolith(s, rng)) { use('monolith'); continue; }
       if (G.useShuffle(s, rng)) { use('shuffle'); continue; }
+      const dance = G.findHelpfulDance(s);
+      if (dance && G.useDance(s, dance[0], dance[1])) { use('dance'); continue; }
+      if (s.items.longDistance > 0) {
+        const pair = [];
+        for (let a = 0; a < CELLS && !pair.length; a++) for (let b = 0; b < CELLS; b++) if (G.canLongMerge(s, a, b)) { pair.push(a, b); break; }
+        if (pair.length && G.useLongDistance(s, pair[0], pair[1])) { use('longDistance'); continue; }
+      }
+      if (G.useLove(s, rng)) { use('love'); continue; }
+      const kisser = s.board.findIndex((v, i) => v && G.kissTargets(s, i).length);
+      if (s.items.kiss > 0 && kisser >= 0 && G.useKiss(s, kisser, G.kissTargets(s, kisser)[0])) { use('kiss'); continue; }
+      if (s.items.jewelry > 0) {
+        const d = s.board.findIndex((v, i) => G.canJewelryDestroy(s, i));
+        const u = s.board.findIndex((v, i) => i !== d && v && v < G.CONFIG.maxLevel);
+        if (d >= 0 && u >= 0 && G.useJewelry(s, d, u)) { use('jewelry'); continue; }
+      }
     }
     if (s.items.gravity > 0 && G.emptyCells(s).length < 4 && G.useGravity(s, 'up')) { use('gravity'); continue; }
     if (s.items.luxury > 0 && G.useLuxury(s)) use('luxury');

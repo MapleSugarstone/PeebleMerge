@@ -3,6 +3,12 @@
 const svg = (body) => `<svg viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
 const S = 'stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"';
 
+// A heart in a unit box, 1 wide and 0.88 tall.
+const HEART = [[.5, .22], 'C', [.45, .08], [.35, 0], [.23, 0], 'C', [.09, 0], [0, .11], [0, .27], 'C', [0, .5], [.25, .68], [.5, .88],
+  'C', [.75, .68], [1, .5], [1, .27], 'C', [1, .11], [.91, 0], [.77, 0], 'C', [.65, 0], [.55, .08], [.5, .22]];
+/** A filled heart `w` wide with its top-left corner at x, y. */
+const heart = (x, y, w) => `<path fill="currentColor" d="M${HEART.map((p) => (typeof p === 'string' ? p : `${+(x + p[0] * w).toFixed(2)} ${+(y + p[1] * w).toFixed(2)}`)).join(' ')}Z"/>`;
+
 export const ICONS = {
   hammer: svg(
     '<rect x="5.5" y="4" width="13" height="5.5" rx="1.8" fill="currentColor"/>' +
@@ -75,6 +81,29 @@ export const ICONS = {
     `<path d="M6.6 6.6 4.6 5.1M6.2 10.3H3.9M17.4 6.6l2-1.5M17.8 10.3h2.3" ${S} stroke-width="1.7"/>` +
     `<path d="M4.8 19.75h14.4" ${S} stroke-width="2"/>`
   ),
+  // Two beamed music notes.
+  dance: svg(
+    '<circle cx="7" cy="17.5" r="3" fill="currentColor"/>' +
+    '<circle cx="17" cy="15.5" r="3" fill="currentColor"/>' +
+    '<path d="M8.2 17.5V5.7L20 3.5v12h-1.8V7.04L10 8.57v8.93z" fill="currentColor"/>'
+  ),
+  // A heart flying toward a block.
+  kiss: svg(
+    `<path d="M3 9h2.5M2.5 12h3.5M3 15h2.5" ${S} stroke-width="1.8"/>` +
+    heart(7.5, 8.5, 8) +
+    '<rect x="17" y="8.5" width="5" height="7" rx="1.4" fill="currentColor"/>'
+  ),
+  // Two blocks in far corners with a heart between them.
+  longDistance: svg(
+    '<rect x="2.5" y="2.5" width="6" height="6" rx="1.5" fill="currentColor"/>' +
+    '<rect x="15.5" y="15.5" width="6" height="6" rx="1.5" fill="currentColor"/>' +
+    heart(8.75, 9.36, 6.5)
+  ),
+  jewelry: svg(
+    `<path d="M7.5 4.5h9l4 5L12 20.5 3.5 9.5z" ${S} stroke-width="2"/>` +
+    `<path d="M3.5 9.5h17M9.8 4.5 8.4 9.5 12 20.5l3.6-11-1.4-5" ${S} stroke-width="1.4"/>`
+  ),
+  love: svg(heart(3.5, 4.52, 17)),
   // Big arrows for picking which way Gravity pulls.
   pullUp: svg(`<path d="M12 19V6M6 11.5 12 5.5l6 6" ${S} stroke-width="2.8"/>`),
   pullDown: svg(`<path d="M12 5v13M6 12.5l6 6 6-6" ${S} stroke-width="2.8"/>`),
